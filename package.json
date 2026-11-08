@@ -1,0 +1,57 @@
+{
+  "name": "chashmyar",
+  "private": true,
+  "version": "2.3.1",
+  "type": "module",
+  "description": "ChashmYar - Windows eye-care, screen dimmer & strict Pomodoro",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "build:win": "tauri build --target x86_64-pc-windows-msvc --bundles nsis --ci -- --locked && node scripts/collect-exe.mjs",
+    "build:host": "tauri build --bundles nsis --ci -- --locked && node scripts/collect-exe.mjs",
+    "build:exe": "tauri build --target x86_64-pc-windows-msvc --bundles nsis --ci -- --locked && node scripts/collect-exe.mjs",
+    "verify:exe": "node scripts/collect-exe.mjs --verify",
+    "test:ui": "node tests/smoke-ui.mjs",
+    "test:ui:v23": "node tests/v23-regression.mjs",
+    "test:logic": "node tests/run-rust-logic.mjs",
+    "test:compat": "cargo test --locked --manifest-path tests/rust-compat/Cargo.toml",
+    "test:credits": "node tests/credits-ui.mjs",
+    "test:ui:all": "node scripts/run-ui-suite.mjs",
+    "test:release": "node tests/release-tools.mjs",
+    "version:check": "node scripts/version.mjs check",
+    "licenses:generate": "node scripts/generate-notices.mjs",
+    "licenses:check": "node scripts/generate-notices.mjs --check",
+    "release:stage": "node scripts/stage-release.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/vazirmatn": "^5.1.1",
+    "@tauri-apps/api": "^2.1.1",
+    "framer-motion": "^11.11.17",
+    "lucide-react": "^0.460.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "playwright": "^1.65.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "vite": "^6.4.5"
+  },
+  "author": "Reza Jantrani",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}

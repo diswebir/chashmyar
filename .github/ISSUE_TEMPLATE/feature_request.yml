@@ -1,0 +1,22 @@
+name: Feature request | پیشنهاد قابلیت
+description: Suggest a focused improvement.
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem | مسئله
+      description: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution | پیشنهاد
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context | توضیحات تکمیلی
+      description: Include alternatives, accessibility or screenshots if useful; remove private information.

@@ -1,0 +1,47 @@
+name: Bug report | گزارش خطا
+description: Report a reproducible problem (not a security vulnerability).
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        لطفاً ابتدا موارد مشابه را جست‌وجو کنید. برای مسائل امنیتی از SECURITY.md استفاده کنید؛ توکن‌ها و لاگ‌های شخصی را منتشر نکنید.
+  - type: input
+    id: version
+    attributes:
+      label: App version | نسخهٔ برنامه
+      placeholder: "2.3.1"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Windows, WebView2 and installation type | محیط
+      description: Windows version, WebView2 version if known, setup or portable; display/HDR/driver if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce | مراحل بازتولید
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual behavior | نتیجهٔ مورد انتظار و واقعی
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized log or screenshot | لاگ یا تصویر بدون اطلاعات شخصی
+      description: Review startup.log for usernames, paths and other private data before sharing.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy and security
+      options:
+        - label: I removed personal information and this is not a security-vulnerability report.
+          required: true

@@ -1,0 +1,26 @@
+# Dependencies and generated frontend output
+/node_modules/
+/dist/
+
+# Rust and Tauri generated output (Cargo.lock files are intentionally tracked)
+/src-tauri/target/
+/src-tauri/gen/
+/tests/rust-compat/target/
+
+# Locally built installers, portable builds and release staging
+/release/
+
+# Local environment / signing secrets
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.key
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

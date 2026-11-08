@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Frontend, logic and release-tool checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Rust stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - name: Install dependencies
+        run: npm ci
+      - name: Check version consistency
+        run: npm run version:check
+      - name: Audit JavaScript dependencies
+        run: npm audit --audit-level=high
+      - name: Build frontend
+        run: npm run build
+      - name: Test pure Rust logic
+        run: npm run test:logic
+      - name: Test record compatibility
+        run: npm run test:compat
+      - name: Test release safety (offline GitHub simulation)
+        run: npm run test:release
+      - name: Verify third-party notices
+        run: npm run licenses:check
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser and mock-IPC suites
+        run: npm run test:ui:all
