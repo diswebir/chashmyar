@@ -39,7 +39,7 @@ windows = { version = "0.58", features = [
     "Win32_System_Time",
     "Win32_System_LibraryLoader",
 ] }
-window-vibrancy = "0.6"
+window-vibrancy = "0.8"
 
 [profile.release]
 opt-level = "s"
