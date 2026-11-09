@@ -13,7 +13,7 @@ Include the affected version, a concise reproduction, impact, platform and a saf
 ## Maintainer setup and boundaries
 
 - Enable private vulnerability reporting in repository security settings if available.
-- Pull-request CI has read-only repository permissions. Only the release-draft job requests `contents: write`; it uses GitHub's short-lived token and refuses to overwrite published releases.
-- GitHub Actions references are pinned to commit SHAs; Dependabot proposes updates. Review changes before merging.
-- Never commit signing keys, personal access tokens or real user data. Default release executables are unsigned and must be tested and reviewed by a human before publication.
+- Pull-request CI and the Windows build job have read-only repository permissions. Only the automatic publication job requests `contents: write`; it uses GitHub's short-lived token, verifies the tag and uploaded digests, and refuses to overwrite published releases.
+- GitHub Actions references are pinned to commit SHAs; Dependabot proposes updates. Review changes before merging; a successful push to `main` can publish automatically without human approval.
+- Never commit signing keys, personal access tokens or real user data. Default release executables are unsigned. Native Windows testing remains important but is not an automatic publication gate; test before merging when practical.
 - Strict break mode, keyboard hooks and display/gamma manipulation require particular care. This software cannot block Windows secure attention sequences.

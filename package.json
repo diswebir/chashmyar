@@ -1,7 +1,7 @@
 {
   "name": "chashmyar",
   "private": true,
-  "version": "2.3.1",
+  "version": "2.4.1",
   "type": "module",
   "description": "ChashmYar - Windows eye-care, screen dimmer & strict Pomodoro",
   "scripts": {
@@ -16,11 +16,12 @@
     "verify:exe": "node scripts/collect-exe.mjs --verify",
     "test:ui": "node tests/smoke-ui.mjs",
     "test:ui:v23": "node tests/v23-regression.mjs",
+    "test:ui:v24": "node tests/v24-regression.mjs",
     "test:logic": "node tests/run-rust-logic.mjs",
     "test:compat": "cargo test --locked --manifest-path tests/rust-compat/Cargo.toml",
     "test:credits": "node tests/credits-ui.mjs",
     "test:ui:all": "node scripts/run-ui-suite.mjs",
-    "test:release": "node tests/release-tools.mjs",
+    "test:release": "node tests/release-tools.mjs && node tests/auto-release.mjs",
     "version:check": "node scripts/version.mjs check",
     "licenses:generate": "node scripts/generate-notices.mjs",
     "licenses:check": "node scripts/generate-notices.mjs --check",

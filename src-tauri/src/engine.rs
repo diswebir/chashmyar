@@ -44,13 +44,18 @@ pub fn refresh(app: &AppHandle, shared: &Shared) -> Snapshot {
             kelvin
         };
 
+        // Reflect the last driver result rather than assuming gamma is always
+        // supported. A failed warm ramp must also activate the fallback layer.
+        rt.gamma_supported = display::gamma_available();
         // The lerp worker interpolates towards this value over ~2 s.
         display::set_target(target);
         rt.last_gamma_kelvin = Some(target);
-        rt.gamma_applied = rt.settings.eye.enabled && !paused_by_whitelist && target < display::NEUTRAL_KELVIN;
+        rt.gamma_applied = rt.gamma_supported && rt.settings.eye.enabled
+            && !paused_by_whitelist && target < display::NEUTRAL_KELVIN;
 
-        let overlay_visible =
-            rt.settings.eye.enabled && !paused_by_whitelist && brightness < 100;
+        let overlay_visible = crate::overlay_policy::needs_overlay(
+            rt.settings.eye.enabled, paused_by_whitelist, brightness, rt.gamma_supported, target,
+        );
         // Publish only an atomic target while holding the runtime lock. Calling
         // synchronous native window getters here can deadlock the UI thread.
         windows::set_overlay_target(overlay_visible);
@@ -207,6 +212,7 @@ pub fn emergency_unlock(app: &AppHandle, shared: &Shared) {
 /// Panic/exit path: never leave a tinted screen, a swallowed keyboard or an
 /// orphaned watchdog behind.
 pub fn safe_shutdown(app: &AppHandle) {
+    windows::stop_overlay_event_hook();
     locker::release();
     focus_guard::stop();
     display::restore_gamma();

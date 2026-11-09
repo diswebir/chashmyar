@@ -85,8 +85,10 @@ function mockInitial(): AppSnapshot {
     revision: 0,
     settings: DEFAULT_SETTINGS,
     timer: {
-      phase: "idle",
-      running: false,
+      // Like a fresh native launch, honour the opt-in startup default. A
+      // seeded snapshot remains independently controllable for UI testing.
+      phase: DEFAULT_SETTINGS.system.autoStartTimerOnLaunch ? "work" : "idle",
+      running: DEFAULT_SETTINGS.system.autoStartTimerOnLaunch,
       paused: false,
       remainingSeconds: DEFAULT_SETTINGS.timer.workMinutes * 60,
       totalSeconds: DEFAULT_SETTINGS.timer.workMinutes * 60,
@@ -106,6 +108,8 @@ function mockInitial(): AppSnapshot {
     eye: {
       gammaSupported: true,
       gammaApplied: true,
+      // A browser preview has no native display-affinity control.
+      captureExcluded: false,
       effectiveKelvin: DEFAULT_SETTINGS.eye.kelvin,
       targetKelvin: DEFAULT_SETTINGS.eye.kelvin,
       effectiveBrightness: DEFAULT_SETTINGS.eye.brightness,

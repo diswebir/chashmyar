@@ -23,6 +23,9 @@ static TOUCHED: AtomicBool = AtomicBool::new(false);
 static WORKER_STARTED: AtomicBool = AtomicBool::new(false);
 static WATCHDOG_STARTED: AtomicBool = AtomicBool::new(false);
 static REASSERT_STARTED: AtomicBool = AtomicBool::new(false);
+// This is the last API result, not proof that a driver actually applied the
+// ramp: Windows may silently reject a valid-looking ramp (especially in HDR).
+static GAMMA_AVAILABLE: AtomicBool = AtomicBool::new(true);
 /// Kelvin the engine is heading to.
 static TARGET: AtomicU32 = AtomicU32::new(NEUTRAL_KELVIN);
 /// Kelvin currently in the LUT (interpolated).
@@ -152,11 +155,18 @@ fn push_ramp(_ramp: &[u16]) -> bool {
 pub fn apply_gamma(kelvin: u32) -> bool {
     let kelvin = kelvin.clamp(MIN_KELVIN, NEUTRAL_KELVIN);
     let ok = push_ramp(&build_ramp(kelvin));
+    GAMMA_AVAILABLE.store(ok, Ordering::SeqCst);
     if ok {
         CURRENT.store(kelvin, Ordering::SeqCst);
         TOUCHED.store(kelvin < NEUTRAL_KELVIN, Ordering::SeqCst);
     }
     ok
+}
+
+/// Whether the latest driver API call reported success. It is only a hint:
+/// SetDeviceGammaRamp may report success without changing the physical display.
+pub fn gamma_available() -> bool {
+    GAMMA_AVAILABLE.load(Ordering::SeqCst)
 }
 
 /// Kelvin currently sitting in the LUT.

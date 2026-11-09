@@ -88,6 +88,7 @@ const empty: AppSnapshot = {
   eye: {
     gammaSupported: true,
     gammaApplied: false,
+    captureExcluded: false,
     effectiveKelvin: DEFAULT_SETTINGS.eye.kelvin,
     targetKelvin: DEFAULT_SETTINGS.eye.kelvin,
     effectiveBrightness: DEFAULT_SETTINGS.eye.brightness,

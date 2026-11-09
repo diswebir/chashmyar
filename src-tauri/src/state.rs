@@ -33,7 +33,7 @@ impl Default for EyeSettings {
             kelvin: 4200,
             brightness: 100,
             profile: "custom".into(),
-            schedule_enabled: false,
+            schedule_enabled: true,
             schedule_start: "19:30".into(),
             schedule_end: "07:00".into(),
             schedule_kelvin: 3000,
@@ -88,13 +88,13 @@ impl Default for TimerSettings {
             snooze_options: vec![3, 5, 8],
             max_snooze: 3,
             auto_start_break: true,
-            auto_start_next_work: false,
+            auto_start_next_work: true,
             idle_detection_enabled: true,
             idle_pause_seconds: 180,
             idle_reset_seconds: 300,
             micro_break_enabled: true,
-            micro_break_interval_minutes: 15,
-            micro_break_seconds: 15,
+            micro_break_interval_minutes: 20,
+            micro_break_seconds: 20,
             micro_break_min_remaining_seconds: 180,
         }
     }
@@ -122,7 +122,7 @@ impl Default for LockSettings {
             emergency_hold_seconds: 5,
             eye_exercises: true,
             body_exercises: true,
-            rotate_seconds: 45,
+            rotate_seconds: 20,
             focus_penalty_enabled: true,
             focus_penalty_seconds: 30,
         }
@@ -195,8 +195,8 @@ pub struct SystemSettings {
 impl Default for SystemSettings {
     fn default() -> Self {
         Self {
-            autostart: false,
-            auto_start_timer_on_launch: false,
+            autostart: true,
+            auto_start_timer_on_launch: true,
             eye_care_on_launch: true,
             sound_enabled: true,
             minimize_to_tray: true,
@@ -249,7 +249,7 @@ pub struct TimerState {
     /// Timer automatically frozen because the user walked away.
     pub idle_paused: bool,
     pub idle_seconds: u32,
-    /// 20-20-20 sub-state (15s, non-blocking).
+    /// 20-20-20 sub-state (20s by default, non-blocking).
     pub micro_break_active: bool,
     pub micro_break_remaining: i64,
     pub micro_break_total: i64,
@@ -278,7 +278,7 @@ impl Default for TimerState {
             idle_seconds: 0,
             micro_break_active: false,
             micro_break_remaining: 0,
-            micro_break_total: 15,
+            micro_break_total: 20,
             penalty_pulse: 0,
             penalties_this_break: 0,
             emergency_hold_progress: 0.0,
@@ -295,6 +295,9 @@ impl Default for TimerState {
 pub struct EyeInfo {
     pub gamma_supported: bool,
     pub gamma_applied: bool,
+    /// Windows accepted display-capture exclusion for the overlay. Some
+    /// capture methods can still ignore it; never interpret this as a guarantee.
+    pub capture_excluded: bool,
     /// Interpolated value currently in the GPU LUT.
     pub effective_kelvin: u32,
     /// Where the engine is heading (after whitelist resolution).
@@ -417,6 +420,7 @@ impl Runtime {
             eye: EyeInfo {
                 gamma_supported: self.gamma_supported,
                 gamma_applied: self.gamma_applied && self.settings.eye.enabled && !paused_by_whitelist,
+                capture_excluded: crate::windows::capture_exclusion_active(),
                 effective_kelvin: crate::display::current_kelvin(),
                 target_kelvin: target,
                 effective_brightness,

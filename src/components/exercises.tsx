@@ -6,8 +6,8 @@ import { t } from "../lib/i18n";
  * the existing page. Illustrations are self-contained vector animations; they
  * show the body part described by the instructions actually moving.
  */
-export type EyeExerciseMode = "horizontal" | "vertical" | "infinity" | "twenty";
-export type StretchId = "neck" | "wrist" | "shoulder" | "posture";
+export type EyeExerciseMode = "horizontal" | "vertical" | "infinity" | "twenty" | "blink" | "rest";
+export type StretchId = "neck" | "wrist" | "shoulder" | "posture" | "chest" | "heel" | "breath";
 
 export interface ExerciseInfo<I extends string> {
   id: I;
@@ -62,6 +62,28 @@ export const EYE_EXERCISES: ExerciseInfo<EyeExerciseMode>[] = [
       "۲۰ ثانیه به دوردست نگاه کنید و به‌طور طبیعی پلک بزنید.",
     ],
   },
+  {
+    id: "blink",
+    title: "پلک زدن آرام",
+    duration: "حدود ۲۰ ثانیه",
+    cue: "آرام و طبیعی، بدون فشار",
+    steps: [
+      "در وضعیت راحت بنشینید یا بایستید و شانه‌ها را رها کنید.",
+      "چند بار آرام و کامل پلک بزنید، بدون فشار دادن پلک‌ها.",
+      "بین پلک‌ها مکث کوتاهی کنید و به‌طور طبیعی نفس بکشید.",
+    ],
+  },
+  {
+    id: "rest",
+    title: "استراحت با چشم‌های بسته",
+    duration: "حدود ۲۰ ثانیه",
+    cue: "در حالت امن و راحت استراحت کنید",
+    steps: [
+      "در جای امن و راحت بنشینید و نگاهتان را از صفحه بردارید.",
+      "چشم‌ها را به‌آرامی ببندید؛ به آن‌ها فشار وارد نکنید.",
+      "چند نفس آرام بکشید و سپس چشم‌ها را به‌آرامی باز کنید.",
+    ],
+  },
 ];
 
 export const STRETCHES: ExerciseInfo<StretchId>[] = [
@@ -109,6 +131,39 @@ export const STRETCHES: ExerciseInfo<StretchId>[] = [
       "پس از ۲ ثانیه به مرکز برگردید و سمت دیگر را تکرار کنید.",
     ],
   },
+  {
+    id: "chest",
+    title: "باز کردن آرام سینه و شانه‌ها",
+    duration: "۵ بار",
+    cue: "بازوها در دامنه راحت حرکت کنند",
+    steps: [
+      "صاف بنشینید یا بایستید و گردن و شانه‌ها را رها کنید.",
+      "بازوها را به‌آرامی کمی به طرفین باز کنید و قفسه سینه را بالا نگه دارید.",
+      "دست‌ها را به حالت راحت برگردانید و چند بار تکرار کنید.",
+    ],
+  },
+  {
+    id: "heel",
+    title: "بالا بردن آرام پاشنه‌ها",
+    duration: "۵ بار",
+    cue: "در صورت نیاز به صندلی تکیه کنید",
+    steps: [
+      "کنار یک صندلی ثابت بایستید و در صورت نیاز آن را بگیرید.",
+      "پاشنه‌ها را آرام بالا بیاورید؛ روی پنجه‌ها بمانید.",
+      "پاشنه‌ها را آهسته پایین بیاورید و چند بار تکرار کنید.",
+    ],
+  },
+  {
+    id: "breath",
+    title: "تنفس آرام و رهاسازی",
+    duration: "حدود ۲۰ ثانیه",
+    cue: "بدون حبس یا فشار دادن نفس",
+    steps: [
+      "در وضعیت راحت بنشینید یا بایستید و شانه‌ها را رها کنید.",
+      "از بینی به‌آرامی نفس بکشید و اجازه دهید قفسه سینه باز شود.",
+      "بازدم را آرام انجام دهید و چند بار به‌راحتی تکرار کنید.",
+    ],
+  },
 ];
 
 // Native SVG animations keep the pivot explicit and are supported by WebView2.
@@ -141,7 +196,7 @@ function useStartSvgAnimation<T extends SVGAnimationElement>(reduced: boolean) {
   return ref;
 }
 function AnimatedTransform({ type, values, times, seconds, reduced }: {
-  type: "rotate" | "translate"; values: string; times: string; seconds: number; reduced: boolean;
+  type: "rotate" | "translate" | "scale"; values: string; times: string; seconds: number; reduced: boolean;
 }) {
   const ref = useStartSvgAnimation<SVGAnimateTransformElement>(reduced);
   if (reduced) return null;
@@ -299,7 +354,7 @@ function SideBendScene() {
   );
 }
 
-function EyePair({ mode }: { mode: Exclude<EyeExerciseMode, "twenty"> }) {
+function EyePair({ mode }: { mode: Exclude<EyeExerciseMode, "twenty" | "blink" | "rest"> }) {
   const reduced = useReducedMotionPreference();
   const values = mode === "horizontal" ? "-15 0;15 0;-15 0" : "0 -8;0 8;0 -8";
   // A scaled copy of the guide path keeps both pupils following its figure eight.
@@ -324,7 +379,7 @@ function EyePair({ mode }: { mode: Exclude<EyeExerciseMode, "twenty"> }) {
 }
 
 /** Smooth, bidirectional guide dots: no jump back to the start at loop ends. */
-function TrackingScene({ mode }: { mode: Exclude<EyeExerciseMode, "twenty"> }) {
+function TrackingScene({ mode }: { mode: Exclude<EyeExerciseMode, "twenty" | "blink" | "rest"> }) {
   const reduced = useReducedMotionPreference();
   const guidePath = mode === "horizontal" ? "M105 80H375" : mode === "vertical" ? "M240 34V142" : "M100 88C100 38 174 38 240 88S380 138 380 88 306 38 240 88 100 138 100 88Z";
   return (
@@ -370,10 +425,95 @@ function DistanceScene() {
   );
 }
 
+/** Slow, full blinks without a hard squeeze. */
+function BlinkScene() {
+  const reduced = useReducedMotionPreference();
+  return (
+    <svg viewBox="0 0 480 280" aria-hidden="true">
+      <SceneBackground />
+      {[165, 315].map((cx) => <g key={cx} transform={`translate(${cx} 140)`}>
+        <g data-motion-part="blink-eye">
+          <AnimatedTransform type="scale" values="1 1;1 .12;1 1" times="0;.5;1" seconds={3.2} reduced={reduced} />
+          <path d="M-55 0Q0-49 55 0Q0 40-55 0Z" fill="var(--illustration-eye)" stroke="var(--illustration-ink)" strokeWidth="3.5" />
+          <circle r="17" fill="var(--illustration-accent)" /><circle r="8" fill="var(--illustration-ink)" />
+          <circle cx="5" cy="-5" r="3.5" fill="white" />
+        </g>
+      </g>)}
+      <path d="M218 211q22 11 44 0" fill="none" stroke="var(--illustration-accent)" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** A seated figure closes their eyes and breathes; no pressure on the eyes. */
+function RestEyesScene() {
+  const reduced = useReducedMotionPreference();
+  return (
+    <svg viewBox="0 0 480 280" aria-hidden="true">
+      <SceneBackground />
+      <g data-motion-part="breathing">
+        <AnimatedTransform type="translate" values="0 0;0 -4;0 0" times="0;.5;1" seconds={4} reduced={reduced} />
+        <path d="M167 253q8-72 73-72t73 72Z" fill="var(--illustration-shirt)" stroke="var(--illustration-ink)" strokeWidth="3" />
+      </g>
+      <circle cx="240" cy="123" r="59" fill="var(--illustration-skin)" stroke="var(--illustration-ink)" strokeWidth="3" />
+      <path d="M181 113q8-60 59-60 55 0 59 60-19-6-26-24-25 22-92 24Z" fill="var(--illustration-hair)" />
+      <path d="M204 128q12 11 24 0m24 0q12 11 24 0M230 152q10 6 20 0" fill="none" stroke="var(--illustration-ink)" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** The arms open gently rather than forcing a deep stretch. */
+function ChestOpeningScene() {
+  const reduced = useReducedMotionPreference();
+  return (
+    <svg viewBox="0 0 480 280" aria-hidden="true">
+      <SceneBackground /><Legs /><Head /><Torso />
+      {[{x: 184, sign: -1}, {x: 296, sign: 1}].map(({x, sign}) => <g key={x} data-motion-part="opening-arm">
+        <AnimatedTransform type="rotate" values={`0 ${x} 145;${sign * 26} ${x} 145;0 ${x} 145`} times="0;.5;1" seconds={5} reduced={reduced} />
+        <path d={`M${x} 145 l${sign * 36} 32 l${sign * 26} -8`} fill="none" stroke="var(--illustration-ink)" strokeWidth="18" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={`M${x} 145 l${sign * 36} 32 l${sign * 26} -8`} fill="none" stroke="var(--illustration-shirt)" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx={x + sign * 62} cy="169" r="7" fill="var(--illustration-skin)" />
+      </g>)}
+      <DoubleArrow d="M112 122H368" left="M112 122l10-8m-10 8 10 8" right="M368 122l-10-8m10 8-10 8" />
+    </svg>
+  );
+}
+
+/** A small vertical lift demonstrates raising and lowering the heels. */
+function HeelRaiseScene() {
+  const reduced = useReducedMotionPreference();
+  return (
+    <svg viewBox="0 0 480 280" aria-hidden="true">
+      <SceneBackground />
+      <path d="M159 260h162" stroke="var(--illustration-ink)" strokeWidth="3" strokeLinecap="round" opacity=".5" />
+      <g data-motion-part="heel-raise">
+        <AnimatedTransform type="translate" values="0 0;0 -9;0 0" times="0;.5;1" seconds={4} reduced={reduced} />
+        <Legs /><RestingArms /><Torso /><Head />
+        <path d="M200 256h-14m88 0h16" stroke="var(--illustration-trousers)" strokeWidth="9" strokeLinecap="round" />
+      </g>
+      <DoubleArrow d="M330 263v-24" left="M330 239l-6 7m6-7 6 7" right="M330 263l-6-7m6 7 6-7" />
+    </svg>
+  );
+}
+
+/** A gently expanding chest visualises comfortable breathing. */
+function BreathingScene() {
+  const reduced = useReducedMotionPreference();
+  return (
+    <svg viewBox="0 0 480 280" aria-hidden="true">
+      <SceneBackground /><Legs /><RestingArms /><Torso /><Head />
+      <g transform="translate(240 164)"><g data-motion-part="breathing-chest">
+        <AnimatedTransform type="scale" values="1 1;1.16 1.1;1 1" times="0;.5;1" seconds={5} reduced={reduced} />
+        <ellipse rx="24" ry="20" fill="var(--illustration-accent)" opacity=".45" />
+        <path d="M-11 0h22M0-10v20" stroke="var(--illustration-eye)" strokeWidth="3" strokeLinecap="round" />
+      </g></g>
+    </svg>
+  );
+}
+
 export function EyeExerciseCanvas({ mode }: { mode: EyeExerciseMode }) {
   return (
     <div className="exercise-illustration" role="img" aria-label={t(EYE_EXERCISES.find((item) => item.id === mode)?.title ?? "تمرین‌های چشم")} data-exercise-scene={mode}>
-      {mode === "twenty" ? <DistanceScene /> : <TrackingScene mode={mode} />}
+      {mode === "twenty" ? <DistanceScene /> : mode === "blink" ? <BlinkScene /> : mode === "rest" ? <RestEyesScene /> : <TrackingScene mode={mode} />}
     </div>
   );
 }
@@ -381,7 +521,7 @@ export function EyeExerciseCanvas({ mode }: { mode: EyeExerciseMode }) {
 export function StretchIllustration({ id }: { id: StretchId }) {
   return (
     <div className="exercise-illustration" role="img" aria-label={t(STRETCHES.find((item) => item.id === id)?.title ?? "تمرین‌های بدن")} data-exercise-scene={id}>
-      {id === "neck" ? <NeckScene /> : id === "wrist" ? <WristScene /> : id === "shoulder" ? <ShoulderScene /> : <SideBendScene />}
+      {id === "neck" ? <NeckScene /> : id === "wrist" ? <WristScene /> : id === "shoulder" ? <ShoulderScene /> : id === "posture" ? <SideBendScene /> : id === "chest" ? <ChestOpeningScene /> : id === "heel" ? <HeelRaiseScene /> : <BreathingScene />}
     </div>
   );
 }

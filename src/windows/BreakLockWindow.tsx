@@ -204,8 +204,8 @@ export default function BreakLockWindow() {
             <div className="rest-stand-reminder" data-testid="stand-reminder">
               <span><PersonStanding size={23} /></span>
               <div>
-                <strong>{t("لطفاً از پشت میز بلند شوید")}</strong>
-                <p>{t("برای انجام تمرین‌ها بایستید و حرکت‌ها را آرام و کنترل‌شده انجام دهید.")}</p>
+                <strong>{slide?.id === "rest" ? t("در جای امن و راحت بنشینید") : t("لطفاً از پشت میز بلند شوید")}</strong>
+                <p>{slide?.id === "rest" ? t("برای این تمرین، نشسته چشم‌ها و شانه‌ها را آرام نگه دارید.") : t("برای انجام تمرین‌ها بایستید و حرکت‌ها را آرام و کنترل‌شده انجام دهید.")}</p>
               </div>
             </div>
 

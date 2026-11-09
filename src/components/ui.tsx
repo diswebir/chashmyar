@@ -124,6 +124,8 @@ export function Slider({
       {hint ? <p className="mb-2 text-[11px] leading-5 text-slate-500">{hint}</p> : null}
       <input
         type="range"
+        aria-label={label}
+        dir="ltr"
         min={min}
         max={max}
         step={step}
@@ -138,7 +140,9 @@ export function Slider({
           } as React.CSSProperties
         }
       />
-      <div className="flex justify-between text-[10px] text-slate-500 digits">
+      {/* The track is physically left-to-right in both languages. Its endpoints
+          must follow that same direction rather than inheriting Persian RTL. */}
+      <div dir="ltr" className="flex justify-between text-[10px] text-slate-500 digits" data-testid="slider-endpoints">
         <span>{toPersianDigits(min)}</span>
         <span>{toPersianDigits(max)}</span>
       </div>

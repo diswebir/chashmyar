@@ -1,26 +1,62 @@
-name: Build Windows release draft
+name: Automatic Windows release
 
-# A stable, matching vX.Y.Z tag is required. The workflow never publishes it.
+# Every push to main gets a patch version and, after checks, a public Release.
+# Tags are created within this same workflow: GITHUB_TOKEN-created pushes do
+# not trigger another push workflow. Manual dispatch is available for recovery.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# queue:max keeps up to 100 pending runs instead of silently replacing all but
+# the newest. The planner also refuses stale/divergent sources and tag reuse.
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+  group: chashmyar-auto-release-main
+  queue: max
 
 jobs:
+  prepare:
+    name: Allocate patch version
+    if: github.ref == 'refs/heads/main' && github.event.deleted != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      skip: ${{ steps.plan.outputs.skip }}
+      reason: ${{ steps.plan.outputs.reason }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+    steps:
+      - name: Checkout the exact pushed commit and full tag history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+      - name: Calculate a patch version without changing main
+        id: plan
+        run: node scripts/auto-release.mjs plan
+        env:
+          RELEASE_SOURCE: ${{ github.sha }}
+
   build:
-    name: Build and verify Windows x64
+    name: Build and test Windows x64
+    needs: prepare
+    if: needs.prepare.outputs.skip == 'false'
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
-      - name: Checkout tagged source
+      - name: Checkout the exact pushed source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - name: Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -36,63 +72,91 @@ jobs:
         uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: src-tauri
-      - name: Verify tag and all version fields
-        run: node scripts/version.mjs check --tag "$env:RELEASE_TAG"
+      - name: Apply the allocated version to all manifests and lockfiles
+        run: node scripts/version.mjs set "$env:RELEASE_VERSION"
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
-      - name: Install dependencies
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      - name: Record the exact Git source tree to be built
+        run: node scripts/auto-release.mjs stamp
+        env:
+          RELEASE_SOURCE: ${{ github.sha }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      - name: Install locked dependencies
         run: npm ci
+      - name: Audit JavaScript dependencies
+        run: npm audit --audit-level=high
       - name: Test pure Rust logic
         run: npm run test:logic
-      - name: Test old-record compatibility
+      - name: Test saved-settings compatibility
         run: npm run test:compat
-      - name: Test release scripts without GitHub access
+      - name: Test release automation offline
         run: npm run test:release
       - name: Build installer and portable executable
         run: npm run build:win
-      - name: Verify PE files
+      - name: Verify executable formats
         run: npm run verify:exe
       - name: Install Chromium
         run: npx playwright install chromium
       - name: Browser and mock-IPC suites
         run: npm run test:ui:all
-      - name: Generate Windows-target third-party notices
-        run: npm run licenses:generate
-      - name: Stage assets and SHA-256 manifest
+      - name: Verify Windows-target third-party notices
+        run: npm run licenses:check
+      - name: Verify source did not change during the build
+        run: node scripts/auto-release.mjs verify-build
+        env:
+          RELEASE_SOURCE: ${{ github.sha }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      - name: Stage release assets and SHA-256 hashes
         run: node scripts/stage-release.mjs --tag "$env:RELEASE_TAG"
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
-      - name: Upload verified build artifact
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      - name: Upload verified build to the publication job
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: chashmyar-windows-x64
-          path: release/staging/*
+          name: chashmyar-windows-${{ github.run_id }}
+          path: |
+            release/staging/*
+            release/auto-release.json
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
 
-  draft:
-    name: Create or update a draft only
-    needs: build
+  publish:
+    name: Tag and publish verified release
+    needs: [prepare, build]
+    if: needs.prepare.outputs.skip == 'false'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
-      - name: Checkout tagged source
+      - name: Checkout the exact pushed source and current tags
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          # This job needs Git credentials only to push the new tag; it does
+          # not run npm install or third-party package lifecycle scripts.
+          persist-credentials: true
       - name: Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
-      - name: Download build artifact
+      - name: Download the verified build
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: chashmyar-windows-x64
-          path: release/staging
-      - name: Verify and create or update draft
-        run: node scripts/create-draft-release.mjs "$RELEASE_TAG"
+          name: chashmyar-windows-${{ github.run_id }}
+          path: release
+      - name: Reconstruct the exact versioned source tree
+        run: node scripts/version.mjs set "$RELEASE_VERSION"
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      - name: Tag and publish only after all asset digests match
+        run: node scripts/auto-release.mjs publish
+        env:
+          RELEASE_SOURCE: ${{ github.sha }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           GH_TOKEN: ${{ github.token }}

@@ -801,6 +801,9 @@ button, input, select, textarea, kbd, svg text, .font-mono {
   backdrop-filter: none;
   box-shadow: 0 12px 28px -12px rgba(0, 0, 0, .55);
 }
+/* A short-exercise toast has no external shadow: it should not leave a dark
+   halo on the desktop. The surface stays opaque in both colour schemes. */
+.micro-break-panel { box-shadow: none; }
 .widget-surface {
   background: var(--widget-surface);
   border-color: var(--widget-edge);

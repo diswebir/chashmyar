@@ -131,6 +131,7 @@ pub fn create_all(app: &AppHandle) -> tauri::Result<()> {
     );
     if let Some(w) = &overlay {
         let _ = w.set_ignore_cursor_events(true);
+        register_overlay(w);
     }
 
     /* -------------------------------- micro bar ---------------------------- */
@@ -238,6 +239,322 @@ pub fn create_all(app: &AppHandle) -> tauri::Result<()> {
 }
 
 /* -------------------------------------------------------------------------- */
+/*                  Capture-safe and system-wide dimmer layer                 */
+/* -------------------------------------------------------------------------- */
+
+use std::sync::atomic::{AtomicBool, Ordering};
+static CAPTURE_EXCLUDED: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
+static OVERLAY_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// This reflects an accepted Windows affinity, not a guarantee that every
+/// third-party or hardware recording method will honour it.
+pub fn capture_exclusion_active() -> bool {
+    CAPTURE_EXCLUDED.load(Ordering::Acquire)
+}
+
+/// Windows 10 2004+ provides EXCLUDEFROMCAPTURE. Older releases treat the same
+/// value as WDA_MONITOR, which may produce an opaque black capture instead of
+/// excluding the window. Detect the real build before ever setting the flag.
+#[cfg(windows)]
+fn can_exclude_from_capture() -> bool {
+    use windows::Win32::System::SystemInformation::OSVERSIONINFOW;
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn RtlGetVersion(version: *mut OSVERSIONINFOW) -> i32;
+    }
+    let mut version = OSVERSIONINFOW::default();
+    version.dwOSVersionInfoSize = std::mem::size_of::<OSVERSIONINFOW>() as u32;
+    let ok = unsafe { RtlGetVersion(&mut version) } == 0;
+    ok && crate::overlay_policy::exclusion_supported_windows(version.dwMajorVersion, version.dwBuildNumber)
+}
+
+#[cfg(windows)]
+fn register_overlay(w: &WebviewWindow) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowDisplayAffinity, SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
+    };
+    // Tauri and this application use different versions of the windows crate;
+    // the transparent Win32 handle itself is ABI-identical.
+    let hwnd = match w.hwnd() {
+        Ok(value) => HWND(value.0 as _),
+        Err(err) => { crate::diag::log(format!("dimmer HWND unavailable: {err}")); return; }
+    };
+    OVERLAY_HWND.store(hwnd.0 as isize, Ordering::Release);
+    if !can_exclude_from_capture() {
+        crate::diag::log("dimmer capture exclusion unavailable: Windows 10 2004 or later required");
+        return;
+    }
+    let set = unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) };
+    let mut actual = 0u32;
+    let excluded = set.is_ok()
+        && unsafe { GetWindowDisplayAffinity(hwnd, &mut actual) }.is_ok()
+        && actual == WDA_EXCLUDEFROMCAPTURE.0;
+    CAPTURE_EXCLUDED.store(excluded, Ordering::Release);
+    if excluded {
+        crate::diag::log("dimmer requested exclusion from compatible screen captures");
+    } else {
+        crate::diag::log(format!("dimmer capture exclusion could not be confirmed: {set:?}, affinity={actual}"));
+    }
+}
+
+#[cfg(not(windows))]
+fn register_overlay(_w: &WebviewWindow) {
+    CAPTURE_EXCLUDED.store(false, Ordering::Release);
+}
+
+// The event listener only observes the event kind/window handle; it does not
+// read names, keystrokes or contents. It stays out-of-context (no injection)
+// and never takes the app runtime mutex or calls synchronous Tauri APIs.
+static OVERLAY_EVENTS_STOPPED: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
+static OVERLAY_EVENTS_STARTED: AtomicBool = AtomicBool::new(false);
+// Publishing/clearing the id and posting WM_QUIT use this tiny private lock.
+// The hook thread clears it before exiting, preventing a recycled thread id
+// from receiving our shutdown message. The callback never takes this lock.
+#[cfg(windows)]
+static OVERLAY_EVENT_THREAD: parking_lot::Mutex<Option<u32>> = parking_lot::Mutex::new(None);
+#[cfg(windows)]
+static OVERLAY_REASSERTING: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
+static OVERLAY_RECHECK_REQUESTED: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
+static OVERLAY_LAST_ABOVE: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+#[cfg(windows)]
+static OVERLAY_LAST_RAISE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+// The policy is portable/testable, but its IDs must match the Windows bindings.
+#[cfg(windows)]
+const _: () = {
+    use crate::overlay_policy as p;
+    use windows::Win32::UI::WindowsAndMessaging as w;
+    assert!(p::EVENT_SYSTEM_ALERT == w::EVENT_SYSTEM_ALERT);
+    assert!(p::EVENT_SYSTEM_FOREGROUND == w::EVENT_SYSTEM_FOREGROUND);
+    assert!(p::EVENT_SYSTEM_MENUSTART == w::EVENT_SYSTEM_MENUSTART);
+    assert!(p::EVENT_SYSTEM_MENUPOPUPSTART == w::EVENT_SYSTEM_MENUPOPUPSTART);
+    assert!(p::EVENT_SYSTEM_DIALOGSTART == w::EVENT_SYSTEM_DIALOGSTART);
+    assert!(p::EVENT_OBJECT_SHOW == w::EVENT_OBJECT_SHOW);
+    assert!(p::EVENT_OBJECT_UNCLOAKED == w::EVENT_OBJECT_UNCLOAKED);
+};
+
+#[cfg(windows)]
+unsafe extern "system" fn overlay_win_event(
+    _hook: windows::Win32::UI::Accessibility::HWINEVENTHOOK,
+    event: u32,
+    hwnd: windows::Win32::Foundation::HWND,
+    object_id: i32,
+    child_id: i32,
+    _event_thread: u32,
+    _event_time: u32,
+) {
+    use crate::overlay_policy::{overlay_event_action, OverlayEventAction};
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_ROOT};
+    let overlay = OVERLAY_HWND.load(Ordering::Acquire);
+    let enabled = overlay != 0 && !OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire)
+        && OVERLAY_TARGET.load(Ordering::Acquire);
+    match overlay_event_action(
+        event, enabled, !hwnd.0.is_null(),
+        !hwnd.0.is_null() && hwnd.0 as isize == overlay, object_id, child_id,
+    ) {
+        OverlayEventAction::Ignore => return,
+        OverlayEventAction::CheckTopLevelStack if unsafe { GetAncestor(hwnd, GA_ROOT) }.0 != hwnd.0 => return,
+        OverlayEventAction::CheckTopLevelStack | OverlayEventAction::CheckStack => {}
+    }
+    // No sleeping or waiting for the 50ms fallback: request the Z-order change
+    // as soon as the OS sends the event, asynchronously and without focus.
+    raise_overlay_if_obscured();
+}
+
+/// A private thread owns the required Windows message queue for WinEvent hooks.
+/// Windows dispatches OUTOFCONTEXT events asynchronously; this reduces the
+/// flash but cannot guarantee that no first frame is ever visible.
+#[cfg(windows)]
+fn start_overlay_event_hook() {
+    if OVERLAY_EVENTS_STARTED.swap(true, Ordering::AcqRel) { return; }
+    let spawned = std::thread::Builder::new().name("overlay-win-events".into()).spawn(|| {
+        use windows::Win32::System::Threading::GetCurrentThreadId;
+        use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent};
+        use crate::overlay_policy as p;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            DispatchMessageW, GetMessageW, PeekMessageW, TranslateMessage, MSG,
+            PM_NOREMOVE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNTHREAD,
+        };
+        let mut msg = MSG::default();
+        // Create the queue before publishing the ID so shutdown can post WM_QUIT.
+        let _ = unsafe { PeekMessageW(&mut msg, None, 0, 0, PM_NOREMOVE) };
+        let thread_id = unsafe { GetCurrentThreadId() };
+        *OVERLAY_EVENT_THREAD.lock() = Some(thread_id);
+        let ranges = [
+            (p::EVENT_SYSTEM_ALERT, p::EVENT_SYSTEM_MENUPOPUPSTART),
+            (p::EVENT_SYSTEM_DIALOGSTART, p::EVENT_SYSTEM_DIALOGSTART),
+            (p::EVENT_OBJECT_SHOW, p::EVENT_OBJECT_SHOW),
+            (p::EVENT_OBJECT_UNCLOAKED, p::EVENT_OBJECT_UNCLOAKED),
+        ];
+        let mut hooks = Vec::new();
+        if !OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) {
+            for (first, last) in ranges {
+                let hook = unsafe { SetWinEventHook(first, last, None, Some(overlay_win_event),
+                    0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNTHREAD) };
+                if hook.is_invalid() {
+                    crate::diag::log(format!("overlay WinEvent hook failed for {first:#x}..{last:#x}; polling remains active"));
+                } else {
+                    hooks.push(hook);
+                }
+            }
+        }
+        if !hooks.is_empty() {
+            crate::diag::log(format!("overlay WinEvent listener ready ({} hooks)", hooks.len()));
+        }
+        while !hooks.is_empty() && !OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) {
+            let result = unsafe { GetMessageW(&mut msg, None, 0, 0) }.0;
+            if result < 0 {
+                crate::diag::log("overlay WinEvent message loop failed; polling remains active");
+                break;
+            }
+            if result == 0 {
+                if !OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) {
+                    crate::diag::log("overlay WinEvent message loop ended; polling remains active");
+                }
+                break; // WM_QUIT
+            }
+            unsafe { let _ = TranslateMessage(&msg); DispatchMessageW(&msg); }
+        }
+        for hook in hooks {
+            if !unsafe { UnhookWinEvent(hook) }.as_bool() {
+                crate::diag::log("overlay WinEvent unhook failed during listener shutdown");
+            }
+        }
+        *OVERLAY_EVENT_THREAD.lock() = None;
+    });
+    if let Err(err) = spawned {
+        crate::diag::log(format!("overlay WinEvent listener could not start: {err}; polling remains active"));
+    }
+}
+
+#[cfg(not(windows))]
+fn start_overlay_event_hook() {}
+
+/// Ask the listener to unhook on its own thread before the application exits.
+pub fn stop_overlay_event_hook() {
+    OVERLAY_EVENTS_STOPPED.store(true, Ordering::Release);
+    OVERLAY_TARGET.store(false, Ordering::Release);
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::{LPARAM, WPARAM};
+        use windows::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
+        let result = {
+            let thread_id = OVERLAY_EVENT_THREAD.lock();
+            thread_id.map(|id| unsafe { PostThreadMessageW(id, WM_QUIT, WPARAM(0), LPARAM(0)) })
+        };
+        if let Some(Err(err)) = result {
+            crate::diag::log(format!("could not post overlay listener shutdown: {err}"));
+        }
+    }
+}
+
+/// Coalesce reentrant/concurrent scans without ever blocking the hook thread.
+/// A second bounded pass catches an event that arrived during the first scan;
+/// the 50 ms worker remains a fallback for any further events or API failure.
+#[cfg(windows)]
+fn raise_overlay_if_obscured() {
+    if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) || !OVERLAY_TARGET.load(Ordering::Acquire) { return; }
+    OVERLAY_RECHECK_REQUESTED.store(true, Ordering::Release);
+    for _ in 0..2 {
+        if OVERLAY_REASSERTING.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
+            return; // the active scan will notice the pending request
+        }
+        struct ScanGuard;
+        impl Drop for ScanGuard {
+            fn drop(&mut self) { OVERLAY_REASSERTING.store(false, Ordering::Release); }
+        }
+        {
+            let _guard = ScanGuard;
+            OVERLAY_RECHECK_REQUESTED.store(false, Ordering::Release);
+            scan_and_raise_overlay();
+        }
+        if !OVERLAY_RECHECK_REQUESTED.load(Ordering::Acquire) { break; }
+    }
+}
+
+/// Some context menus, notifications and other topmost windows are inserted
+/// after the dimmer. Check a bounded stack and request a nonactivating async
+/// re-order only if a visible window is actually above the overlay.
+#[cfg(windows)]
+fn scan_and_raise_overlay() {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::SystemInformation::GetTickCount64;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindow, IsWindow, IsWindowVisible, SetWindowPos, GW_HWNDPREV, HWND_TOPMOST,
+        SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
+        SWP_NOSENDCHANGING, SWP_NOSIZE,
+    };
+    if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) || !OVERLAY_TARGET.load(Ordering::Acquire) { return; }
+    let raw = OVERLAY_HWND.load(Ordering::Acquire);
+    if raw == 0 { return; }
+    let hwnd = HWND(raw as _);
+    if !unsafe { IsWindow(hwnd) }.as_bool() { return; }
+    let Ok(mut above) = (unsafe { GetWindow(hwnd, GW_HWNDPREV) }) else { return; };
+    // Hidden windows can sit in the Z-order above us. Walk past them, but cap
+    // the scan so unusual system window stacks never monopolize this worker.
+    for _ in 0..256 {
+        if unsafe { IsWindowVisible(above) }.as_bool() {
+            let now = unsafe { GetTickCount64() };
+            if !crate::overlay_policy::should_request_overlay_raise(
+                OVERLAY_LAST_ABOVE.load(Ordering::Relaxed),
+                OVERLAY_LAST_RAISE_MS.load(Ordering::Relaxed), above.0 as isize, now,
+            ) || OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire)
+                || !OVERLAY_TARGET.load(Ordering::Acquire) { break; }
+            let raised = unsafe { SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER
+                    | SWP_NOSENDCHANGING | SWP_ASYNCWINDOWPOS) };
+            if raised.is_ok() {
+                OVERLAY_LAST_ABOVE.store(above.0 as isize, Ordering::Relaxed);
+                OVERLAY_LAST_RAISE_MS.store(now, Ordering::Relaxed);
+            }
+            break;
+        }
+        match unsafe { GetWindow(above, GW_HWNDPREV) } {
+            Ok(next) if next.0 != above.0 => above = next,
+            _ => break,
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn raise_overlay_if_obscured() {}
+
+/// A single physical rectangle covers all attached monitors, including those
+/// left/above the primary display. Geometry is rechecked while active so a
+/// monitor connected or moved later is not stuck with the old primary bounds.
+#[cfg(windows)]
+fn virtual_desktop_bounds() -> Option<(i32, i32, u32, u32)> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+        SM_YVIRTUALSCREEN,
+    };
+    let (x, y, width, height) = unsafe { (
+        GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN),
+        GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN),
+    ) };
+    crate::overlay_policy::valid_virtual_bounds(x, y, width, height)
+}
+
+#[cfg(not(windows))]
+fn virtual_desktop_bounds() -> Option<(i32, i32, u32, u32)> { None }
+
+fn fit_overlay(app: &AppHandle, w: &WebviewWindow, bounds: Option<(i32, i32, u32, u32)>) {
+    if let Some((x, y, width, height)) = bounds {
+        let _ = w.set_position(PhysicalPosition::new(x, y));
+        let _ = w.set_size(PhysicalSize::new(width, height));
+    } else {
+        let monitor = primary_monitor(app);
+        let _ = w.set_position(LogicalPosition::new(monitor.x, monitor.y));
+        let _ = w.set_size(LogicalSize::new(monitor.width, monitor.height));
+    }
+}
+
+/* -------------------------------------------------------------------------- */
 /*                              Window controls                               */
 /* -------------------------------------------------------------------------- */
 
@@ -326,21 +643,44 @@ static OVERLAY_TARGET: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 static OVERLAY_WORKER_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn set_overlay_target(visible: bool) {
-    OVERLAY_TARGET.store(visible, std::sync::atomic::Ordering::Release);
+    if !OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) {
+        OVERLAY_TARGET.store(visible, Ordering::Release);
+    }
 }
 
 pub fn ensure_overlay_worker(app: &AppHandle) {
     use std::sync::atomic::Ordering;
-    if OVERLAY_WORKER_STARTED.swap(true, Ordering::AcqRel) { return; }
+    if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire)
+        || OVERLAY_WORKER_STARTED.swap(true, Ordering::AcqRel) { return; }
+    start_overlay_event_hook();
     let app = app.clone();
     std::thread::spawn(move || {
         let mut last = false; // constructed hidden
+        let mut last_bounds = None;
+        let mut geometry_ticks = 0u8;
         loop {
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            // Backup for windows that do not send accessibility events. Event
+            // hooks handle normal menus sooner than this polling interval.
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) { break; }
             let desired = OVERLAY_TARGET.load(Ordering::Acquire);
             if desired != last {
                 sync_overlay(&app, desired);
                 last = desired;
+                last_bounds = if desired { virtual_desktop_bounds() } else { None };
+                geometry_ticks = 0;
+            }
+            if desired {
+                raise_overlay_if_obscured();
+                geometry_ticks = geometry_ticks.saturating_add(1);
+                if geometry_ticks >= 40 { // topology check every two seconds
+                    geometry_ticks = 0;
+                    let bounds = virtual_desktop_bounds();
+                    if bounds != last_bounds {
+                        if let Some(w) = get(&app, DIMMER) { fit_overlay(&app, &w, bounds); }
+                        last_bounds = bounds;
+                    }
+                }
             }
         }
     });
@@ -355,9 +695,9 @@ pub fn sync_overlay(app: &AppHandle, visible: bool) {
             return;
         }
         if visible {
-            let monitor = primary_monitor(app);
-            let _ = w.set_position(LogicalPosition::new(monitor.x, monitor.y));
-            let _ = w.set_size(LogicalSize::new(monitor.width, monitor.height));
+            if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) || !OVERLAY_TARGET.load(Ordering::Acquire) { return; }
+            fit_overlay(app, &w, virtual_desktop_bounds());
+            if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) || !OVERLAY_TARGET.load(Ordering::Acquire) { return; }
             let _ = w.show();
             let _ = w.set_always_on_top(true);
         } else {

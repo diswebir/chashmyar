@@ -36,7 +36,7 @@ export default function MicroBreakToast() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timer.microBreakActive]);
 
-  const total = Math.max(1, timer.microBreakTotal || 15);
+  const total = Math.max(1, timer.microBreakTotal || 20);
   const remaining = Math.max(0, timer.microBreakRemaining);
   const progress = 1 - remaining / total;
   const radius = 26;
@@ -51,7 +51,7 @@ export default function MicroBreakToast() {
         initial={{ y: -22, scale: 0.96 }}
         animate={{ y: 0, scale: 1 }}
         transition={{ type: "spring", stiffness: 380, damping: 30 }}
-        className="panel osd-panel flex w-[500px] items-center gap-4 px-5 py-4"
+        className="panel osd-panel micro-break-panel flex w-[500px] items-center gap-4 px-5 py-4"
         data-testid="short-exercise-panel"
       >
         {/* ring countdown */}

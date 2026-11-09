@@ -13,8 +13,10 @@ export default function DimmerOverlayWindow() {
   const dim = active ? ((100 - eye.effectiveBrightness) / 100) * 0.88 : 0;
 
   const fallbackWarm = active && !eye.gammaSupported;
-  const warmth = Math.min(1, Math.max(0, (6500 - (eye.effectiveKelvin || settings.eye.kelvin)) / 3800));
-  const tintOpacity = fallbackWarm ? 0.12 + warmth * 0.5 : 0;
+  // On driver failure the LUT never reaches the requested Kelvin; use the
+  // resolved target, not the unchanged current LUT, to calculate the fallback.
+  const warmth = Math.min(1, Math.max(0, (6500 - eye.targetKelvin) / 3800));
+  const tintOpacity = fallbackWarm && warmth > 0 ? 0.12 + warmth * 0.5 : 0;
 
   return (
     <div className="pointer-events-none fixed inset-0 select-none" style={{ cursor: "none" }}>

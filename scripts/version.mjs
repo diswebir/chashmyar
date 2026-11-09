@@ -64,13 +64,13 @@ function setVersion(v) {
   saveJson('pkg', pkg); saveJson('lock', lock); saveJson('tauri', tauri);
   writeFileSync(path('cargo'), updatedCargo); writeFileSync(path('cargoLock'), updatedLock);
   check();
-  console.log('Next: update CHANGELOG.md, test, commit, and create the matching v' + v + ' tag.');
+  console.log('Version files updated. Normal releases are tagged automatically after a successful main push.');
 }
 
 try {
   const [command = 'check', ...args] = process.argv.slice(2);
   if (command === 'check') {
-    if (args.length !== 0 && !(args.length === 2 && args[0] === '--tag')) throw new Error('Usage: node scripts/version.mjs check [--tag v2.3.1]');
+    if (args.length !== 0 && !(args.length === 2 && args[0] === '--tag')) throw new Error('Usage: node scripts/version.mjs check [--tag v2.4.1]');
     check(args.length ? args[1] : undefined);
   } else if (command === 'set' && args.length === 1) setVersion(args[0]);
   else throw new Error('Usage: node scripts/version.mjs check [--tag vX.Y.Z] | set X.Y.Z');

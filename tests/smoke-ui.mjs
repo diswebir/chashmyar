@@ -180,8 +180,11 @@ try {
   const exercises = [
     ['horizontal', 'Gentle left and right gaze'], ['vertical', 'Gentle up and down gaze'],
     ['infinity', 'Follow the figure eight'], ['twenty', 'Look into the distance'],
+    ['blink', 'Slow blinking'], ['rest', 'Rest with closed eyes'],
     ['neck', 'Gentle neck stretch'], ['wrist', 'Gentle wrist movement'],
     ['shoulder', 'Raise and lower the shoulders'], ['posture', 'Standing side stretch'],
+    ['chest', 'Gentle chest and shoulder opening'], ['heel', 'Gentle heel raises'],
+    ['breath', 'Gentle breathing and relaxation'],
   ];
   for (let i = 0; i < exercises.length; i++) {
     await lock.page.getByRole('button', { name: `Exercise ${i + 1}`, exact: true }).click();
@@ -290,7 +293,7 @@ try {
   for (const [width,height] of [[1000,650],[800,600],[530,700]]) {
     const small = await fresh({ width, height }, baseline);
     await small.page.goto(url + '?win=break-lock', { waitUntil: 'networkidle' });
-    await small.page.getByRole('button', { name: 'Exercise 6', exact: true }).click();
+    await small.page.getByRole('button', { name: 'Exercise 8', exact: true }).click();
     await small.page.getByText('Gentle wrist movement', { exact: true }).waitFor({ state: 'visible', timeout: 5000 });
     const bounds = await small.page.evaluate(() => {
       const instructions = document.querySelector('.rest-instructions');

@@ -9,7 +9,7 @@
 //!                   │  ├─ remaining == alert(30s) ─▶ warning OSD (+snooze budget)
 //!                   │  ├─ idle >= 3m  ─▶ PausedIdle (auto-resume on input)
 //!                   │  ├─ idle >= 5m  ─▶ Natural break: cycle reset + log
-//!                   │  └─ work_elapsed >= 15m ─▶ 20-20-20 micro break (15s, non-blocking)
+//!                   │  └─ work_elapsed >= 15m ─▶ 20-20-20 micro break (20s by default, non-blocking)
 //! ```
 
 use std::time::Duration;

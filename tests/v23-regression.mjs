@@ -225,6 +225,9 @@ try {
 
   // High-frequency event queue and debounced controls retain the final action.
   const stress = await fresh({ analytics: {} });
+  // A new installation now starts the timer automatically; reset to exercise
+  // the same 100-click start/pause ordering from a deterministic idle state.
+  await stress.getByRole('button', { name: 'بازنشانی', exact: true }).click();
   await stress.getByRole('button', { name: 'شروع تمرکز', exact: true }).evaluate((el) => { for (let i = 0; i < 100; i++) el.click(); });
   await stress.waitForTimeout(350);
   const afterToggles = await read(stress);

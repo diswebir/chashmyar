@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 const dir = mkdtempSync(join(tmpdir(), 'chashmyar-logic-'));
 try {
-  for (const name of ['score', 'timer_rules']) {
+  for (const name of ['score', 'timer_rules', 'overlay_policy']) {
     const executable = join(dir, name + (process.platform === 'win32' ? '.exe' : ''));
     const compile = spawnSync('rustc', ['--edition=2021', '--test', `src-tauri/src/${name}.rs`, '-o', executable], { stdio: 'inherit' });
     if (compile.error || compile.status !== 0) throw compile.error ?? new Error(`${name}: rustc exited ${compile.status}`);

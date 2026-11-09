@@ -107,6 +107,8 @@ export interface TimerState {
 export interface EyeInfo {
   gammaSupported: boolean;
   gammaApplied: boolean;
+  /** Best-effort OS capture exclusion; not a guarantee for every recorder. */
+  captureExcluded: boolean;
   /** interpolated value currently in the GPU LUT */
   effectiveKelvin: number;
   targetKelvin: number;
@@ -175,7 +177,7 @@ export const DEFAULT_SETTINGS: Settings = {
     kelvin: 4200,
     brightness: 100,
     profile: "custom",
-    scheduleEnabled: false,
+    scheduleEnabled: true,
     scheduleStart: "19:30",
     scheduleEnd: "07:00",
     scheduleKelvin: 3000,
@@ -193,13 +195,13 @@ export const DEFAULT_SETTINGS: Settings = {
     snoozeOptions: [3, 5, 8],
     maxSnooze: 3,
     autoStartBreak: true,
-    autoStartNextWork: false,
+    autoStartNextWork: true,
     idleDetectionEnabled: true,
     idlePauseSeconds: 180,
     idleResetSeconds: 300,
     microBreakEnabled: true,
-    microBreakIntervalMinutes: 15,
-    microBreakSeconds: 15,
+    microBreakIntervalMinutes: 20,
+    microBreakSeconds: 20,
     microBreakMinRemainingSeconds: 180,
   },
   lock: {
@@ -208,13 +210,13 @@ export const DEFAULT_SETTINGS: Settings = {
     emergencyHoldSeconds: 5,
     eyeExercises: true,
     bodyExercises: true,
-    rotateSeconds: 45,
+    rotateSeconds: 20,
     focusPenaltyEnabled: true,
     focusPenaltySeconds: 30,
   },
   system: {
-    autostart: false,
-    autoStartTimerOnLaunch: false,
+    autostart: true,
+    autoStartTimerOnLaunch: true,
     eyeCareOnLaunch: true,
     soundEnabled: true,
     minimizeToTray: true,

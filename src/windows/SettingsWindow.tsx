@@ -519,10 +519,15 @@ export default function SettingsWindow() {
                         {t("وضعیت موتور رنگ:")}{" "}
                         <b className={eye.gammaSupported ? "text-emerald-300" : "text-amber-300"}>
                           {eye.gammaSupported
-                            ? t("SetDeviceGammaRamp در دسترس است")
+                            ? t("درایور درخواست Gamma را پذیرفت؛ اعمال رنگ تضمین نمی‌شود")
                             : t("درایور GPU اجازه تغییر Gamma را نداد")}
                         </b>
                         {!eye.gammaSupported ? t("— لایه گرمای نرم‌افزاری فعال شد.") : ""}
+                        <p className="mt-2" data-testid="capture-exclusion-status">
+                          {eye.captureExcluded
+                            ? t("لایه در روش‌های ضبط سازگار پنهان می‌شود؛ نتیجه را در ابزار ضبط خود بررسی کنید.")
+                            : t("پنهان‌سازی لایه از ضبط در این سیستم تأیید نشد؛ تصویر یا ویدئو ممکن است فیلتر را نشان دهد.")}
+                        </p>
                       </div>
                     </div>
                   </GlassCard>

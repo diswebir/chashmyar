@@ -23,6 +23,7 @@ pub mod focus_guard;
 pub mod foreground;
 pub mod idle;
 pub mod locker;
+pub mod overlay_policy;
 pub mod persistence;
 pub mod self_test;
 pub mod score;
@@ -63,7 +64,11 @@ pub fn run() {
             let eye_on_launch = settings.system.eye_care_on_launch;
             let launched_from_autostart = std::env::args().any(|a| a == "--autostart");
 
+            // Probe before starting the lerp worker: probing after refresh used
+            // to reset the LUT to neutral during the startup transition.
+            let gamma_supported = display::gamma_supported_probe();
             let mut runtime = Runtime::new(settings);
+            runtime.gamma_supported = gamma_supported;
             if !eye_on_launch {
                 runtime.settings.eye.enabled = false;
             }
@@ -97,10 +102,13 @@ pub fn run() {
             {
                 use tauri_plugin_autostart::ManagerExt;
                 let manager = handle.autolaunch();
-                if autostart_wanted {
-                    let _ = manager.enable();
-                } else {
-                    let _ = manager.disable();
+                let result = if autostart_wanted { manager.enable() } else { manager.disable() };
+                if let Err(err) = result {
+                    diag::log(format!("autostart registration failed: {err}"));
+                }
+                match manager.is_enabled() {
+                    Ok(actual) => shared.lock().settings.system.autostart = actual,
+                    Err(err) => diag::log(format!("autostart state could not be read: {err}")),
                 }
             }
 
@@ -135,7 +143,7 @@ pub fn run() {
                 let rt = shared.lock();
                 diag::log(format!(
                     "startup complete — gamma supported: {}, eye care: {}, autostart: {}, theme: {:?}, language: {:?}, widget: {:?}",
-                    display::gamma_supported_probe(),
+                    rt.gamma_supported,
                     rt.settings.eye.enabled,
                     autostart_wanted,
                     rt.settings.system.theme,
