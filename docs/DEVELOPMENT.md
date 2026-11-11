@@ -1,6 +1,6 @@
 # Development and testing
 
-[فارسی: راهنمای انتشار و ساخت](RELEASE_GUIDE_FA.md) · [User guide](USER_GUIDE_FA.md) · [Architecture](ARCHITECTURE.md)
+[فارسی: راهنمای انتشار و ساخت](RELEASE_GUIDE_FA.md) · [User guide](USER_GUIDE_FA.md) · [Architecture](ARCHITECTURE.md) · [CI and release](CI_AND_RELEASE.md)
 
 ## Supported target and prerequisites
 
@@ -14,7 +14,7 @@ On Windows install:
 4. [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/). See the [official Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```powershell
-rustup default stable-msvc
+rustup default stable-x86_64-pc-windows-msvc
 rustup target add x86_64-pc-windows-msvc
 node --version
 rustc --version
@@ -57,13 +57,15 @@ npm run test:logic      # pure Rust policies, timed interpolation, parked worker
 npm run test:windows-policy # source-integrity checks, not an interactive Windows test
 npm run test:compat     # saved data; on non-Windows also a fake-driver worker/shutdown test
 npm run test:release    # version, checksums and auto-release tests with local Git + fake gh
+npm run test:branding   # approved master/derived checksums, PNGs, ICO frames and Tauri references
+npm run test:docs       # local documentation links; does not fetch external sites
 npm run licenses:check  # compare notices with installed/locked dependencies
 npm run build
 npx playwright install chromium
 npm run test:ui:all     # starts and stops a temporary local production preview
 ```
 
-`test:ui:all` runs the smoke, v2.3/v2.4 regression/stress, sound-default and creator-card suites using Playwright and mock IPC. The sound suite uses a fake audio context and a Tauri event stub; it verifies the toggle, saved values and chime routing, not real sound output. The runner picks a free localhost port and tears down the preview afterward. Alternatively, start `npm run dev` and run `npm run test:ui`, `npm run test:ui:v23`, `npm run test:ui:v24`, `npm run test:sound` or `npm run test:credits` individually; set `CHASHMYAR_TEST_URL` if needed. On a Linux CI host use `npx playwright install --with-deps chromium` if system libraries are missing.
+`test:ui:all` runs the smoke, v2.3/v2.4 regression/stress, sound-default, creator-card and branding UI suites using Playwright and mock IPC. The branding suite checks that the header and favicon load in both themes/languages at two viewport sizes. The sound suite uses a fake audio context and a Tauri event stub; it verifies the toggle, saved values and chime routing, not real sound output. The runner picks a free localhost port and tears down the preview afterward. Alternatively, start `npm run dev` and run `npm run test:ui`, `npm run test:ui:v23`, `npm run test:ui:v24`, `npm run test:sound`, `npm run test:credits` or `npm run test:branding:ui` individually; set `CHASHMYAR_TEST_URL` if needed. On a Linux CI host use `npx playwright install --with-deps chromium` if system libraries are missing.
 
 The browser tests do **not** exercise WebView2, native keyboard/WinEvent hooks, real gamma, installer execution or system tray. The Linux/macOS fake-driver test exercises the actual gamma worker and a shutdown race, but not a Windows GPU. The Windows source-policy and pure overlay-policy tests check control flow, event classification and burst scheduling, not foreground behavior, WebView2 button interaction, native hook delivery, popup latency or capture. Since a `main` push publishes automatically after CI checks, run the Windows acceptance checklist in the [release guide](RELEASE_GUIDE_FA.md) before pushing when practical; it is not a release gate. Avoid trying strict lock while unsaved work is open. The `--self-test` option is supplementary and writes to `%LOCALAPPDATA%\ChashmYar\startup.log`.
 
@@ -81,9 +83,18 @@ The automatic workflow computes a patch after the greater of the source baseline
 
 `THIRD_PARTY_NOTICES.txt` is generated from locked Windows-target Cargo metadata and installed non-dev npm dependencies, including an intentionally over-inclusive set of build dependencies. Some upstream crate archives omit their license files; documented pinned fallback texts are in `third-party/fallback-licenses/`. Tao 0.37.2 is a modified local Apache-2.0 path dependency; its source, license and modification notice must remain in `src-tauri/vendor/tao` (see `CHASHMYAR_PATCH.md`). Do not remove the patch based solely on version numbers: focusable notification windows and deliberate strict-lock focus have distinct requirements. After a dependency update, run `npm run licenses:generate`, review the diff and source-offer obligations, and commit the updated notice. An unknown package without a license file fails notice generation rather than being silently omitted. The release workflow verifies the committed notices on Windows and uploads them beside the binaries.
 
+## Branding and documentation images
+
+The user-approved 2048px raster artwork is `assets/branding/chashmyar-logo-selected.png`. The committed PNGs and seven-frame ICO are derived from it, and the same assets serve Tauri, the tray, header and favicon. `npm run test:branding` checks checksums, dimensions, transparency, content and ICO/PNG consistency without Python. It does not validate how Windows Explorer or the actual tray renders them.
+
+To intentionally regenerate artwork, see [branding](../assets/branding/README.md). Python and Pillow are optional maintainer tools; neither is required by `npm ci`, CI or the Windows build. Review 16/32px appearances and the manifest diff, then test the real Windows taskbar/tray in light and dark modes after a build.
+
+For refreshed documentation screenshots, use `npm run build`, `npx playwright install chromium`, then `npm run docs:capture`. The script opens a temporary local production preview and captures fresh browser/mock data, not a user's real settings or Windows behavior. Review both PNGs before committing. The screenshot may display the baseline version rather than a release tag.
+
 ## Repository layout
 
 ```text
+assets/branding/        approved artwork, asset hashes and maintainer notes
 src/                    React windows, components, i18n, state and IPC mock
 src-tauri/src/          Rust state, timer, analytics and Windows integrations
 src-tauri/vendor/tao/   documented Apache-2.0 Windows focus patch and original license

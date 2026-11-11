@@ -1,64 +1,73 @@
-# ChashmYar
+<div align="center">
+  <img src="src-tauri/icons/128x128.png" alt="ChashmYar eye logo" width="112" />
+  <h1>ChashmYar | چشم‌یار</h1>
+  <p><strong>A Windows companion for breaks, eye-care reminders and focus</strong></p>
+  <p>Windows x64 · Tauri 2 · Rust · React · TypeScript</p>
+  <p><a href="README.md">فارسی</a> · <a href="docs/USER_GUIDE_FA.md">User guide (Persian)</a> · <a href="docs/DEVELOPMENT.md">Development</a> · <a href="docs/CI_AND_RELEASE.md">CI and release</a></p>
+</div>
 
-A Windows desktop companion for work/break scheduling, eye-care reminders, screen color temperature and brightness. Built with Tauri 2, Rust, React and TypeScript. The interface supports Persian and English and light/dark themes.
+ChashmYar schedules work and breaks, offers short exercises, and provides display color-temperature and software-brightness controls. The UI supports Persian and English and light and dark themes.
 
-[فارسی](README.md) · [User guide (Persian)](docs/USER_GUIDE_FA.md) · [Development](docs/DEVELOPMENT.md) · [Release guide (Persian)](docs/RELEASE_GUIDE_FA.md) · [MIT license](LICENSE)
+![ChashmYar dashboard in light mode, Persian UI](docs/assets/dashboard-fa-light.png)
 
-![ChashmYar dashboard in light mode](docs/assets/dashboard-fa-light.png)
+<details>
+<summary>Dark theme</summary>
 
-The screenshot shows the browser preview with mock data, not native Windows integration.
+![ChashmYar dashboard in dark mode, Persian UI](docs/assets/dashboard-fa-dark.png)
 
-## Features
+</details>
 
-- Work and break timer, snooze choices, short exercises and break-screen guides.
-- Floating/docked timer widget, configurable color temperature and brightness, color-safe app list and tray controls.
-- Two explainable scores based on recorded timer outcomes, with no fabricated score when data is missing.
-- Persian/English localization, local settings and analytics, light/dark appearance.
-- Fresh installs enable Windows autostart after the first launch, start the timer on launch, enable the night schedule, and rotate the thirteen exercise guides every 20 seconds. Existing saved choices are retained.
-- In-app alert, short-exercise, break and penalty sounds are off on fresh installs. Enable them under System → Play alert sounds; an explicitly saved choice remains unchanged when upgrading.
-
-This is not a medical device. Scores do not establish eye health, actual exercise or concentration. Gamma behavior depends on hardware/driver/HDR. When enabled, emergency exit during a strict break is holding **Ctrl and Shift** together for the configured duration. Test strict mode in a safe environment first; Ctrl+Alt+Del cannot be blocked by an ordinary Windows application.
-
-On Windows 10 version 2004 or newer, the software overlay requests exclusion from compatible screen-capture methods and reacts to menu/window events to get above ordinary topmost popups sooner. Events and rendering are asynchronous, so a first-frame flash is still possible. Capture behavior, protected screens, HDR, graphics drivers and all recorder types cannot be guaranteed; verify with your own Windows setup. See the [user guide](docs/USER_GUIDE_FA.md).
+Screenshots show the browser mock with sample data; they are not evidence of native Windows behavior. The version displayed is the source baseline, not necessarily the latest release.
 
 ## Download and requirements
 
-Open the repository's **Releases** section once an automatic release has been published. Choose the Windows x64 setup executable or the portable executable; check `SHA256SUMS.txt` against your download. The portable app still stores settings and analytics in the user's data directory.
+Open the repository's **Releases** page and choose a published version. If the page is empty, the repository owner has not published one yet.
 
-Microsoft Edge WebView2 Runtime is required. The setup can download the bootstrapper when it is absent; portable users may [install the Runtime separately](https://developer.microsoft.com/en-us/microsoft-edge/webview2/). Default builds are **unsigned** and may trigger SmartScreen. The included hash manifest checks file integrity, not publisher identity.
+| Release asset | Purpose |
+|---|---|
+| `ChashmYar_<version>_x64-setup.exe` | Per-user Windows installer |
+| `ChashmYar-<version>-portable.exe` | Direct launch without installing the app |
+| `SHA256SUMS.txt` | SHA-256 hashes for the release assets |
+| `LICENSE`, `THIRD_PARTY_NOTICES.txt` | Project license and third-party notices |
 
-Settings and analytics are normally in `%APPDATA%\com.chashmyar.desktop\`; diagnostics are normally in `%LOCALAPPDATA%\ChashmYar\startup.log`. Back up the data while the app is stopped and review logs for private paths before sharing. The current code does not provide a remote analytics upload service; the color-safe watcher reads foreground app information locally. The separate overlay listener reacts to event types and window handles, without reading titles or keystrokes; the creator link opens the system browser.
+The intended target is **Windows 10/11 x64** with [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/). The installer can download WebView2 if it is missing, requiring internet; portable use also requires the Runtime. Portable settings and analytics are stored in the user's app-data directory, not next to the executable.
 
-## Build and test
-
-On Windows install Node.js 24 LTS, Rust stable/MSVC, Visual Studio C++ Build Tools and WebView2, then:
-
-```powershell
-npm ci
-npm run version:check
-npm run build:win
-npm run verify:exe
-npm run licenses:generate
-npm run release:stage
-```
-
-Local builds go in ignored `release/windows/`; staged release assets and hashes go in `release/staging/`. Tests:
+Compare a downloaded file's hash against the matching line in the same Release, replacing the example version:
 
 ```powershell
-npm run test:logic
-npm run test:compat
-npm run test:release
-npm run build
-npx playwright install chromium
-npm run test:ui:all
+Get-FileHash .\ChashmYar_2.4.4_x64-setup.exe -Algorithm SHA256
+Get-Content .\SHA256SUMS.txt
 ```
 
-Browser tests use mock IPC. They do not verify a real installer, WebView2, keyboard hooks, gamma or tray behavior. The supplied v2.4.3 binaries were cross-built on Linux; the new focus and overlay paths have not been run on Windows in this environment. GitHub Actions is configured but has not yet been exercised in the user's repository.
+A hash checks consistency with that manifest, **not publisher identity**. Default builds are unsigned and may trigger SmartScreen. Download from a trusted source and follow your organization's security policy.
 
-Every push to `main` is intended to increment the patch version, build Windows x64 and **publish a GitHub Release automatically** after its checks pass. With the `2.4.3` baseline and no later tags, the first release is normally `v2.4.4`. `main` keeps its baseline version; the release tag, source archive and binaries carry the new version. No manual tag or Publish button is required.
+## Features and defaults
 
-A public download requires a public repository, enabled Actions and permission to write releases. Failed checks, queue limits or superseded/out-of-order runs can prevent a release. Automated publication is not a native Windows acceptance test. Full instructions and recovery: [release guide](docs/RELEASE_GUIDE_FA.md).
+- Work/break timer, start/pause, snooze, short exercises, break guidance and a floating/docked timer widget.
+- Color temperature, software brightness, a night schedule and a color-safe application list.
+- Two explainable indicators based on recorded timer outcomes; no invented score when there is insufficient data.
+- Fresh installs request Windows autostart after the first launch and enable automatic timer start, the night schedule and exercises. These options are configurable and previously stored choices are retained.
+- Alert, short-exercise, break and penalty sounds are **off** on fresh installs. Enable them in System → Play alert sounds. Visual notifications remain enabled; an explicitly stored previous sound preference is preserved.
+- Bilingual UI, local settings and analytics, light/dark appearance and system tray controls.
 
-See [architecture and scoring](docs/ARCHITECTURE.md), [contributing](CONTRIBUTING.md), [security](SECURITY.md), [changelog](CHANGELOG.md) and [third-party notices](THIRD_PARTY_NOTICES.txt). ChashmYar's source is MIT-licensed; third-party components retain their own licenses.
+**Safety and limitations:** This is not a medical device; scores do not establish eye health, concentration or exercise completion. Gamma depends on hardware, drivers and HDR, and resetting it may not restore a previous custom calibration. Software brightness uses an overlay: capture exclusion and eliminating every popup flash cannot be guaranteed. Test the behavior on your own device.
 
-Created by Reza Jantrani — [disweb.ir](https://disweb.ir/).
+When enabled, emergency exit during a strict break requires holding **Ctrl and Shift** together for the configured duration; U is not needed. Save work and test strict mode in a safe environment first. An ordinary Windows app cannot block Ctrl+Alt+Del. See the [user guide](docs/USER_GUIDE_FA.md) for details.
+
+## For repository owners: build with GitHub
+
+**This is source code; no newly built executable is included.** Each push to `main` requests an automatic patch release: the workflow allocates a version, builds Windows x64 and, if its checks pass, **publishes a Release without manual approval**. The separate `CI` workflow also runs, but its result is not a dependency of the release workflow.
+
+The source baseline is `2.4.3`; in a new repository without higher stable tags, the first successful release is normally `v2.4.4`. Older 2.4.3 executables do not contain the new logo. GitHub execution and real Windows behavior have not yet been confirmed for this source in your repository. Permissions, failed checks and queue limits can prevent publication.
+
+Read [CI and release](docs/CI_AND_RELEASE.md) for exact setup, artifacts and recovery. The [Persian GitHub quickstart](docs/GITHUB_QUICKSTART_FA.md) walks through the first upload. Do not omit `.github`, lockfiles, tests or the vendored Tao patch.
+
+## Data and privacy
+
+Settings and analytics are normally stored in `%APPDATA%\com.chashmyar.desktop\`; diagnostics are normally in `%LOCALAPPDATA%\ChashmYar\startup.log`. Stop the app before backing up its data, and review logs for personal paths before sharing. The current code has no remote analytics-upload service. The color-safe watcher reads active process names and window titles locally; the separate overlay listener reacts to event types and window handles without reading titles or keystrokes. The creator link opens the system browser; the installer can download WebView2. See [architecture and data](docs/ARCHITECTURE.md).
+
+## Development and documentation
+
+Windows development requires Node.js, Rust/MSVC, the C++ tools and WebView2. They are **not** required locally just to push this source for GitHub to build. See [development and tests](docs/DEVELOPMENT.md), [architecture](docs/ARCHITECTURE.md), [branding](assets/branding/README.md), [changelog](CHANGELOG.md), [contributing](CONTRIBUTING.md) and [security](SECURITY.md).
+
+The project's source is [MIT licensed](LICENSE); third-party components retain their own licenses: [notices](THIRD_PARTY_NOTICES.txt). Created by Reza Jantrani — [disweb.ir](https://disweb.ir/).

@@ -4,6 +4,12 @@ Changes to the application are recorded here. Version tags use stable semantic v
 
 ## Unreleased
 
+### Branding and documentation
+- Replaced the previous app icon with the approved black-and-white eye design. Generated consistent PNGs and a seven-size Windows ICO; the same mark is used in the app header, tray's default icon, favicon and both READMEs. Previously built 2.4.3 executables are unchanged and do not contain this logo.
+- Refreshed Persian light/dark browser screenshots and expanded the Persian GitHub quickstart, English CI/release guide, user, architecture, development and security documentation. Screenshots use sample mock data.
+- Added source-only checks for artwork hashes, PNG/ICO dimensions and consistency, local documentation links, and browser loading in both languages/themes. Included an optional reproducible icon generator; normal builds do not require Python or Pillow.
+- These changes have not yet been built or run as a new native Windows executable in this environment. Actual GitHub publication and Windows taskbar/tray rendering still need verification.
+
 ## 2.4.3
 
 ### Changed

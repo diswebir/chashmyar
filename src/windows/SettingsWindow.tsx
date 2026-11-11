@@ -48,6 +48,7 @@ import { call } from "../lib/bridge";
 import { t } from "../lib/i18n";
 import AnalyticsTab from "../components/AnalyticsTab";
 import { EyeExerciseCanvas, STRETCHES, StretchIllustration } from "../components/exercises";
+import brandMark from "../../src-tauri/icons/128x128.png";
 
 import { version as APP_VERSION } from "../../package.json";
 
@@ -127,10 +128,15 @@ export default function SettingsWindow() {
       {/* ------------------------------- header ------------------------------- */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-6 py-3.5">
         <div className="flex items-center gap-3">
-          <div className="relative grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-emerald-400/25 to-sky-400/20 ring-1 ring-emerald-300/25">
-            <Eye size={20} className="text-emerald-300" />
-            <span className="absolute -bottom-0.5 -left-0.5 h-3 w-3 rounded-full border-2 border-ink-900 bg-emerald-400" />
-          </div>
+          <img
+            src={brandMark}
+            alt=""
+            aria-hidden="true"
+            data-testid="brand-logo"
+            width={44}
+            height={44}
+            className="h-11 w-11 shrink-0 rounded-2xl"
+          />
           <div>
             <h1 className="text-[16px] font-bold tracking-tight text-slate-50">{t("چشم‌یار")}</h1>
             <p className="text-[11px] text-slate-500">

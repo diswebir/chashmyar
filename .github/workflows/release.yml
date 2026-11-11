@@ -84,6 +84,10 @@ jobs:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
       - name: Install locked dependencies
         run: npm ci
+      - name: Check branding assets and Windows icon frames
+        run: npm run test:branding
+      - name: Check local documentation links
+        run: npm run test:docs
       - name: Audit JavaScript dependencies
         run: npm audit --audit-level=high
       - name: Test pure Rust logic

@@ -1,5 +1,7 @@
 # Architecture and data model
 
+[README](../README.en.md) · [Development](DEVELOPMENT.md) · [CI and release](CI_AND_RELEASE.md) · [Security](../SECURITY.md)
+
 ## Overview
 
 ```text
@@ -47,6 +49,12 @@ Diagnostics are normally `%LOCALAPPDATA%\ChashmYar\startup.log`; the log records
 
 Focus time counts active work-timer seconds, excluding the short-exercise period. It is flushed periodically and on transitions, day change and shutdown; an unexpected crash can lose an unflushed partial minute. Reset invalidates old pending flushes. Recorded timer time is not proof of human activity or concentration.
 
+## Branding and security boundaries
+
+The approved raster is kept in [branding](../assets/branding/README.md). Committed PNG and ICO derivatives are used by the Tauri bundle; `tray.rs` reads Tauri's `default_window_icon()`, the React header imports the 128px PNG, and Vite bundles the 32px favicon. PNG/ICO structure and browser loading can be checked without a native build, but Explorer/tray appearance at different DPI settings remains a Windows acceptance test.
+
+`src-tauri/capabilities/default.json` grants the listed core/window, store and autostart permissions to the six named app windows. `src-tauri/tauri.conf.json` currently sets `csp` to `null`; this is **not** a restrictive Content Security Policy. Treat the webview and command surface as a trust boundary: do not load untrusted remote content or render untrusted HTML without security review, and review capabilities/CSP before adding network features. The creator-site command opens the system browser rather than turning that site into an application webview.
+
 ## Scores and migrations
 
 - **Eye-care adherence:** `(full breaks completed + scheduled short exercises completed) / (all resolved full-break and scheduled-exercise opportunities)`. Preview exercises and unresolved opportunities are excluded.
@@ -67,4 +75,4 @@ These are self-tracking indicators, not a medical diagnosis and not verification
 
 ## Quality boundaries
 
-CI runs TypeScript/Vite build, pure Rust scoring/timer/overlay-policy tests, settings and record compatibility tests, release-helper tests and browser/mock IPC suites. On a push to `main`, a separate serialized Windows workflow allocates the next patch, builds and tests it, tags a version-only child of the pushed source and automatically publishes the verified assets. `main` is not modified. Publication uses a temporary draft and a separate write-enabled job; only matching uploaded SHA-256 digests are accepted. Neither workflow automatically validates native Windows UI interaction or installed behavior. Run the checklist in `docs/RELEASE_GUIDE_FA.md` before pushing changes when practical; publication itself is not held for manual approval.
+CI runs TypeScript/Vite build, branding and local-link checks, pure Rust scoring/timer/overlay-policy tests, settings and record compatibility tests, offline release-helper tests and browser/mock IPC suites. On a push to `main`, a separate serialized Windows workflow allocates the next patch, builds and tests it, tags a version-only child of the pushed source and automatically publishes the verified assets. `main` is not modified. Publication uses a temporary draft and a separate write-enabled job; only matching uploaded SHA-256 digests are accepted. The release workflow runs its own checks and does not wait for the independent CI workflow. Neither workflow automatically validates native Windows UI interaction or installed behavior. Run the checklist in [the release guide](RELEASE_GUIDE_FA.md) before pushing changes when practical; publication itself is not held for manual approval. The first run in the real repository has not yet been verified.

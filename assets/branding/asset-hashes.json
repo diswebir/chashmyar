@@ -1,0 +1,15 @@
+{
+  "source": {
+    "path": "assets/branding/chashmyar-logo-selected.png",
+    "sha256": "e842373565820628bda522532c6ca9b0d56206bb2b8b02bb2cde07a01b0ce01e"
+  },
+  "generated": {
+    "src-tauri/icons/128x128.png": "34b72ebde14a117b99612c964367ab199be4da0ae8acf021edcdbffcf8288853",
+    "src-tauri/icons/128x128@2x.png": "87cf71ef453de274650d458cda9ec1c5b0c94c15bffb9eb08453efd85af4d562",
+    "src-tauri/icons/256x256.png": "87cf71ef453de274650d458cda9ec1c5b0c94c15bffb9eb08453efd85af4d562",
+    "src-tauri/icons/32x32.png": "ed3aedf9668263ee8baa56f7393fb4829991673dcdb33e7ebd74128adf7bd384",
+    "src-tauri/icons/512x512.png": "9f93775c46a2be7fda56842f7196191621e4832f2f56aa6285d15c1c1f605c71",
+    "src-tauri/icons/icon.ico": "f7d33805541e23bbdaaf0da41e36d4b9d61e92706b6f51d358f6c508d70558f8",
+    "src-tauri/icons/icon.png": "6f8ba120e0571ac5a0fac58dca60afcf4d4782e02a92bc23b0feb5fb407e61a4"
+  }
+}

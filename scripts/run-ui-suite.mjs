@@ -44,7 +44,7 @@ try {
     await delay(250);
   }
   if (!ready) throw new Error('Vite preview failed to start within 60 seconds');
-  for (const test of ['tests/smoke-ui.mjs', 'tests/v23-regression.mjs', 'tests/v24-regression.mjs', 'tests/sound-defaults.mjs', 'tests/credits-ui.mjs']) await runTest(test, url);
+  for (const test of ['tests/smoke-ui.mjs', 'tests/v23-regression.mjs', 'tests/v24-regression.mjs', 'tests/sound-defaults.mjs', 'tests/credits-ui.mjs', 'tests/branding-ui.mjs']) await runTest(test, url);
   console.log('✓ All browser/mock suites passed.');
 } catch (error) {
   console.error(error.message);
