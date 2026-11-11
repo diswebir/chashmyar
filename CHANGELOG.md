@@ -4,6 +4,20 @@ Changes to the application are recorded here. Version tags use stable semantic v
 
 ## Unreleased
 
+## 2.4.3
+
+### Changed
+- In-app alert, short-exercise, break and penalty sounds default to off on fresh installations and when the saved sound field is absent. They can be enabled in System → Play alert sounds; visual notifications are unchanged.
+- Explicitly stored sound preferences, including a previously enabled setting, are preserved on upgrade. Browser/mock checks cover both choices and persistence; Windows audio remains a manual test.
+
+## 2.4.2
+
+### Fixed and optimized
+- Windows warning, short-exercise and dimmer windows are shown without automatic activation using a documented, Apache-2.0 local Tao patch. Notification cards remain focusable on intentional interaction; strict break still explicitly takes focus. Interactive Windows validation is required.
+- Earlier menu/capture/create signals and bounded follow-up scans can reduce popup flash; inactive overlay, settled gamma, and clean settings/widget writers no longer poll continuously. The 50 ms active-overlay fallback and capture-exclusion request remain. Out-of-context events cannot guarantee a filtered first frame.
+- Gamma transitions now reach their target in the saved duration instead of exponentially drifting for many seconds; failed driver writes are retried with backoff. Shutdown serializes in-flight gamma writes before a neutral reset, and retains the watchdog if the reset fails. HDR/driver behavior remains device dependent.
+- An extension-only color-safe entry no longer matches every executable. The warning chime now follows actual warning state rather than the initial creation of its hidden webview. Existing settings/defaults and stored data are not migrated or reset.
+
 ### Release automation
 - Replaced the tag-triggered manual draft flow with automatic patch allocation, Windows build/checks and public Release publication on `main` pushes. Version-only commits are tagged without changing `main`.
 - Verify each uploaded asset's GitHub SHA-256 digest before publication; resume matching interrupted drafts and refuse to overwrite published or mismatched assets. The workflow and native app still require verification in a real GitHub repository and on Windows.

@@ -178,6 +178,7 @@ pub struct SystemSettings {
     pub autostart: bool,
     pub auto_start_timer_on_launch: bool,
     pub eye_care_on_launch: bool,
+    /// In-app alert, exercise, break and penalty sounds; off by default.
     pub sound_enabled: bool,
     pub minimize_to_tray: bool,
     /* ---- v2: micro widget placement ---- */
@@ -198,7 +199,7 @@ impl Default for SystemSettings {
             autostart: true,
             auto_start_timer_on_launch: true,
             eye_care_on_launch: true,
-            sound_enabled: true,
+            sound_enabled: false,
             minimize_to_tray: true,
             widget_mode: WidgetMode::Docked,
             widget_x: 0,

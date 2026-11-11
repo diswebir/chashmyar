@@ -1222,7 +1222,7 @@ License text: 3a036676ec8c0dba (LICENSE)
 
 Cargo: tao 0.37.2
 Declared license: Apache-2.0
-Source: https://github.com/tauri-apps/tao
+Source: https://github.com/tauri-apps/tao (modified local copy: src-tauri/vendor/tao; see CHASHMYAR_PATCH.md)
 Source revision: 2d9b2ba15247879787878ae565e350bcc1b9f622
 License text: 6dc0e068dcf3a5bc (LICENSE)
 License text: 28694f36acab4f50 (LICENSE.spdx)

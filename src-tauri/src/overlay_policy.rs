@@ -25,7 +25,9 @@ pub const EVENT_SYSTEM_ALERT: u32 = 0x0002;
 pub const EVENT_SYSTEM_FOREGROUND: u32 = 0x0003;
 pub const EVENT_SYSTEM_MENUSTART: u32 = 0x0004;
 pub const EVENT_SYSTEM_MENUPOPUPSTART: u32 = 0x0006;
+pub const EVENT_SYSTEM_CAPTURESTART: u32 = 0x0008;
 pub const EVENT_SYSTEM_DIALOGSTART: u32 = 0x0010;
+pub const EVENT_OBJECT_CREATE: u32 = 0x8000;
 pub const EVENT_OBJECT_SHOW: u32 = 0x8002;
 pub const EVENT_OBJECT_UNCLOAKED: u32 = 0x8018;
 
@@ -49,8 +51,8 @@ pub fn overlay_event_action(
     match event {
         // Some system-level notifications may not identify a window at all.
         EVENT_SYSTEM_ALERT | EVENT_SYSTEM_FOREGROUND | EVENT_SYSTEM_MENUSTART
-        | EVENT_SYSTEM_MENUPOPUPSTART | EVENT_SYSTEM_DIALOGSTART => CheckStack,
-        EVENT_OBJECT_SHOW | EVENT_OBJECT_UNCLOAKED
+        | EVENT_SYSTEM_MENUPOPUPSTART | EVENT_SYSTEM_CAPTURESTART | EVENT_SYSTEM_DIALOGSTART => CheckStack,
+        EVENT_OBJECT_CREATE | EVENT_OBJECT_SHOW | EVENT_OBJECT_UNCLOAKED
             if has_window && child_id == 0 && matches!(object_id, 0 | -4) => CheckTopLevelStack,
         _ => Ignore,
     }
@@ -61,6 +63,47 @@ pub fn overlay_event_action(
 pub const DUPLICATE_RAISE_GUARD_MS: u64 = 8;
 pub fn should_request_overlay_raise(previous_above: isize, last_ms: u64, above: isize, now_ms: u64) -> bool {
     previous_above != above || now_ms < last_ms || now_ms - last_ms >= DUPLICATE_RAISE_GUARD_MS
+}
+
+/// A few short checks after an early event catch popups that are inserted just
+/// after their menu/capture/create notification. The ordinary 50 ms fallback
+/// remains; bursts are rate-limited and never run while the overlay is off.
+pub const BURST_OFFSETS_MS: [u64; 4] = [3, 8, 16, 32];
+pub const BURST_MIN_INTERVAL_MS: u64 = 100;
+
+pub fn should_request_burst(last_ms: u64, now_ms: u64) -> bool {
+    last_ms == 0 || now_ms < last_ms || now_ms - last_ms >= BURST_MIN_INTERVAL_MS
+}
+
+#[derive(Debug, Default)]
+pub struct OverlayBurst {
+    started_ms: Option<u64>,
+    next_index: usize,
+}
+
+impl OverlayBurst {
+    pub fn start(&mut self, now_ms: u64) {
+        self.started_ms = Some(now_ms);
+        self.next_index = 0;
+    }
+
+    pub fn clear(&mut self) { self.started_ms = None; }
+
+    pub fn next_due(&self) -> Option<u64> {
+        self.started_ms.map(|start| start.saturating_add(BURST_OFFSETS_MS[self.next_index]))
+    }
+
+    /// Collapse missed deadlines to one scan rather than replaying a backlog.
+    pub fn take_if_due(&mut self, now_ms: u64) -> bool {
+        let Some(deadline) = self.next_due() else { return false };
+        if now_ms < deadline { return false; }
+        while self.next_index < BURST_OFFSETS_MS.len()
+            && self.started_ms.unwrap().saturating_add(BURST_OFFSETS_MS[self.next_index]) <= now_ms {
+            self.next_index += 1;
+        }
+        if self.next_index == BURST_OFFSETS_MS.len() { self.clear(); }
+        true
+    }
 }
 
 /// GetSystemMetrics returns physical coordinates, including negative origins.
@@ -106,7 +149,7 @@ mod tests {
     fn popup_and_foreground_events_trigger_without_exposing_content() {
         use OverlayEventAction::*;
         for event in [EVENT_SYSTEM_ALERT, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MENUSTART,
-                      EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_DIALOGSTART] {
+                      EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_CAPTURESTART, EVENT_SYSTEM_DIALOGSTART] {
             assert_eq!(overlay_event_action(event, true, true, false, -4, 0), CheckStack);
             assert_eq!(overlay_event_action(event, false, true, false, -4, 0), Ignore);
             assert_eq!(overlay_event_action(event, true, false, false, -4, 0), CheckStack); // system event without HWND
@@ -120,7 +163,7 @@ mod tests {
     #[test]
     fn show_events_ignore_individual_accessibility_children() {
         use OverlayEventAction::*;
-        for event in [EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED] {
+        for event in [EVENT_OBJECT_CREATE, EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED] {
             assert_eq!(overlay_event_action(event, true, true, false, 0, 0), CheckTopLevelStack); // window itself
             assert_eq!(overlay_event_action(event, true, true, false, -4, 0), CheckTopLevelStack); // client itself
             assert_eq!(overlay_event_action(event, true, true, false, 0, 1), Ignore);
@@ -140,6 +183,29 @@ mod tests {
         assert!(should_request_overlay_raise(42, 100, 42, 108));
         assert!(should_request_overlay_raise(42, 100, 77, 101)); // different window: immediate
         assert!(should_request_overlay_raise(42, 100, 42, 99)); // clock anomaly: don't suppress
+    }
+
+    #[test]
+    fn early_popup_burst_is_short_bounded_and_does_not_replay_late_work() {
+        assert!(should_request_burst(0, 20));
+        assert!(!should_request_burst(100, 199));
+        assert!(should_request_burst(100, 200));
+        assert!(should_request_burst(100, 99));
+        let mut b = OverlayBurst::default();
+        assert_eq!(b.next_due(), None);
+        b.start(1000);
+        assert_eq!(b.next_due(), Some(1003));
+        assert!(!b.take_if_due(1002));
+        assert!(b.take_if_due(1003));
+        assert_eq!(b.next_due(), Some(1008));
+        assert!(b.take_if_due(1030)); // skip both overdue checks, not a flood
+        assert_eq!(b.next_due(), Some(1032));
+        assert!(b.take_if_due(1032));
+        assert_eq!(b.next_due(), None);
+        b.start(u64::MAX - 2);
+        assert_eq!(b.next_due(), Some(u64::MAX));
+        assert!(b.take_if_due(u64::MAX));
+        assert_eq!(b.next_due(), None);
     }
 
     #[test]

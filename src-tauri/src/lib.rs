@@ -16,11 +16,14 @@
 pub mod analytics;
 pub mod analytics_record;
 pub mod commands;
+pub mod coalesced_signal;
 pub mod diag;
 pub mod display;
 pub mod engine;
+pub mod gamma_logic;
 pub mod focus_guard;
 pub mod foreground;
+pub mod foreground_match;
 pub mod idle;
 pub mod locker;
 pub mod overlay_policy;

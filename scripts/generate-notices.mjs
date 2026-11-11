@@ -62,7 +62,10 @@ try {
   if (cargo.status !== 0) throw new Error(`cargo metadata failed: ${cargo.stderr.trim()}`);
   const metadata = JSON.parse(cargo.stdout);
   for (const p of metadata.packages) {
-    if (!p.source) continue; // This app is covered separately by LICENSE.
+    // The app itself is covered separately by LICENSE. Local path dependencies
+    // are still third-party components (notably our modified Apache-2.0 Tao)
+    // and must not disappear from notices just because Cargo has no source URL.
+    if (!p.source && p.name === 'chashmyar') continue;
     const dir = dirname(p.manifest_path);
     let files = localLicenseFiles(dir, p.license_file);
     const key = `${p.name}@${p.version}`;
@@ -74,8 +77,12 @@ try {
     if (existsSync(vcsFile)) {
       try { vcs = JSON.parse(readFileSync(vcsFile, 'utf8')).git?.sha1; } catch { /* Optional metadata. */ }
     }
+    const upstream = p.repository || `https://crates.io/crates/${p.name}/${p.version}`;
+    const source = !p.source && p.name === 'tao'
+      ? `${upstream} (modified local copy: src-tauri/vendor/tao; see CHASHMYAR_PATCH.md)`
+      : upstream;
     collect('Cargo', p.name, p.version, p.license || (p.license_file ? 'See included license file' : null),
-      p.repository || `https://crates.io/crates/${p.name}/${p.version}`, vcs, files);
+      source, vcs, files);
   }
 
   const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));

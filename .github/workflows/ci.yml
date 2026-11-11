@@ -38,6 +38,8 @@ jobs:
         run: npm run build
       - name: Test pure Rust logic
         run: npm run test:logic
+      - name: Verify Windows focus and overlay source policy
+        run: npm run test:windows-policy
       - name: Test record compatibility
         run: npm run test:compat
       - name: Test release safety (offline GitHub simulation)

@@ -115,6 +115,9 @@ pub fn create_all(app: &AppHandle) -> tauri::Result<()> {
         DIMMER,
         WebviewWindowBuilder::new(app, DIMMER, app_url())
             .title("ChashmYar Overlay")
+            // The dimmer is display-only: unlike notification cards, it must
+            // never be a keyboard/mouse activation target.
+            .focusable(false)
             .decorations(false)
             .transparent(true)
             .shadow(false)
@@ -323,6 +326,14 @@ static OVERLAY_RECHECK_REQUESTED: AtomicBool = AtomicBool::new(false);
 static OVERLAY_LAST_ABOVE: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 #[cfg(windows)]
 static OVERLAY_LAST_RAISE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(windows)]
+static OVERLAY_LAST_BURST_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static OVERLAY_BURST_REQUESTED: AtomicBool = AtomicBool::new(false);
+static OVERLAY_WORKER_THREAD: std::sync::OnceLock<std::thread::Thread> = std::sync::OnceLock::new();
+
+fn wake_overlay_worker() {
+    if let Some(worker) = OVERLAY_WORKER_THREAD.get() { worker.unpark(); }
+}
 
 // The policy is portable/testable, but its IDs must match the Windows bindings.
 #[cfg(windows)]
@@ -333,7 +344,9 @@ const _: () = {
     assert!(p::EVENT_SYSTEM_FOREGROUND == w::EVENT_SYSTEM_FOREGROUND);
     assert!(p::EVENT_SYSTEM_MENUSTART == w::EVENT_SYSTEM_MENUSTART);
     assert!(p::EVENT_SYSTEM_MENUPOPUPSTART == w::EVENT_SYSTEM_MENUPOPUPSTART);
+    assert!(p::EVENT_SYSTEM_CAPTURESTART == w::EVENT_SYSTEM_CAPTURESTART);
     assert!(p::EVENT_SYSTEM_DIALOGSTART == w::EVENT_SYSTEM_DIALOGSTART);
+    assert!(p::EVENT_OBJECT_CREATE == w::EVENT_OBJECT_CREATE);
     assert!(p::EVENT_OBJECT_SHOW == w::EVENT_OBJECT_SHOW);
     assert!(p::EVENT_OBJECT_UNCLOAKED == w::EVENT_OBJECT_UNCLOAKED);
 };
@@ -361,9 +374,23 @@ unsafe extern "system" fn overlay_win_event(
         OverlayEventAction::CheckTopLevelStack if unsafe { GetAncestor(hwnd, GA_ROOT) }.0 != hwnd.0 => return,
         OverlayEventAction::CheckTopLevelStack | OverlayEventAction::CheckStack => {}
     }
-    // No sleeping or waiting for the 50ms fallback: request the Z-order change
-    // as soon as the OS sends the event, asynchronously and without focus.
+    // No sleeping or waiting for the fallback: check immediately. Some system
+    // events precede the visible popup, so also schedule a short bounded burst
+    // on the worker; no input, titles or contents are read.
     raise_overlay_if_obscured();
+    request_overlay_burst();
+}
+
+#[cfg(windows)]
+fn request_overlay_burst() {
+    use windows::Win32::System::SystemInformation::GetTickCount64;
+    let now = unsafe { GetTickCount64() };
+    let last = OVERLAY_LAST_BURST_MS.load(Ordering::Relaxed);
+    if !crate::overlay_policy::should_request_burst(last, now) { return; }
+    if OVERLAY_LAST_BURST_MS.compare_exchange(last, now, Ordering::AcqRel, Ordering::Relaxed).is_ok() {
+        OVERLAY_BURST_REQUESTED.store(true, Ordering::Release);
+        wake_overlay_worker();
+    }
 }
 
 /// A private thread owns the required Windows message queue for WinEvent hooks.
@@ -386,9 +413,9 @@ fn start_overlay_event_hook() {
         let thread_id = unsafe { GetCurrentThreadId() };
         *OVERLAY_EVENT_THREAD.lock() = Some(thread_id);
         let ranges = [
-            (p::EVENT_SYSTEM_ALERT, p::EVENT_SYSTEM_MENUPOPUPSTART),
+            (p::EVENT_SYSTEM_ALERT, p::EVENT_SYSTEM_CAPTURESTART),
             (p::EVENT_SYSTEM_DIALOGSTART, p::EVENT_SYSTEM_DIALOGSTART),
-            (p::EVENT_OBJECT_SHOW, p::EVENT_OBJECT_SHOW),
+            (p::EVENT_OBJECT_CREATE, p::EVENT_OBJECT_SHOW),
             (p::EVENT_OBJECT_UNCLOAKED, p::EVENT_OBJECT_UNCLOAKED),
         ];
         let mut hooks = Vec::new();
@@ -439,6 +466,7 @@ fn start_overlay_event_hook() {}
 pub fn stop_overlay_event_hook() {
     OVERLAY_EVENTS_STOPPED.store(true, Ordering::Release);
     OVERLAY_TARGET.store(false, Ordering::Release);
+    wake_overlay_worker();
     #[cfg(windows)]
     {
         use windows::Win32::Foundation::{LPARAM, WPARAM};
@@ -643,45 +671,67 @@ static OVERLAY_TARGET: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 static OVERLAY_WORKER_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn set_overlay_target(visible: bool) {
-    if !OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) {
-        OVERLAY_TARGET.store(visible, Ordering::Release);
+    if !OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire)
+        && OVERLAY_TARGET.swap(visible, Ordering::AcqRel) != visible {
+        // Durable unpark also covers a state change just before the worker parks.
+        wake_overlay_worker();
     }
 }
 
 pub fn ensure_overlay_worker(app: &AppHandle) {
-    use std::sync::atomic::Ordering;
     if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire)
         || OVERLAY_WORKER_STARTED.swap(true, Ordering::AcqRel) { return; }
     start_overlay_event_hook();
     let app = app.clone();
     std::thread::spawn(move || {
+        use std::time::{Duration, Instant};
+        let _ = OVERLAY_WORKER_THREAD.set(std::thread::current());
+        let epoch = Instant::now();
+        let now_ms = || epoch.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         let mut last = false; // constructed hidden
         let mut last_bounds = None;
-        let mut geometry_ticks = 0u8;
+        let mut next_poll = 0u64;
+        let mut next_geometry = 0u64;
+        let mut burst = crate::overlay_policy::OverlayBurst::default();
         loop {
-            // Backup for windows that do not send accessibility events. Event
-            // hooks handle normal menus sooner than this polling interval.
-            std::thread::sleep(std::time::Duration::from_millis(50));
             if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) { break; }
             let desired = OVERLAY_TARGET.load(Ordering::Acquire);
+            let now = now_ms();
             if desired != last {
                 sync_overlay(&app, desired);
                 last = desired;
                 last_bounds = if desired { virtual_desktop_bounds() } else { None };
-                geometry_ticks = 0;
-            }
-            if desired {
-                raise_overlay_if_obscured();
-                geometry_ticks = geometry_ticks.saturating_add(1);
-                if geometry_ticks >= 40 { // topology check every two seconds
-                    geometry_ticks = 0;
-                    let bounds = virtual_desktop_bounds();
-                    if bounds != last_bounds {
-                        if let Some(w) = get(&app, DIMMER) { fit_overlay(&app, &w, bounds); }
-                        last_bounds = bounds;
-                    }
+                next_poll = now;
+                next_geometry = now.saturating_add(2_000);
+                if !desired {
+                    burst.clear();
+                    OVERLAY_BURST_REQUESTED.store(false, Ordering::Release);
                 }
             }
+            if !desired {
+                // Previously this thread woke 20 times a second even when the
+                // filter was absent. State changes and shutdown unpark it.
+                std::thread::park();
+                continue;
+            }
+            if OVERLAY_BURST_REQUESTED.swap(false, Ordering::AcqRel) { burst.start(now); }
+            let burst_due = burst.take_if_due(now);
+            if now >= next_poll || burst_due {
+                raise_overlay_if_obscured();
+                if now >= next_poll { next_poll = now.saturating_add(50); }
+            }
+            if now >= next_geometry {
+                let bounds = virtual_desktop_bounds();
+                if bounds != last_bounds {
+                    if let Some(w) = get(&app, DIMMER) { fit_overlay(&app, &w, bounds); }
+                    last_bounds = bounds;
+                }
+                next_geometry = now.saturating_add(2_000);
+            }
+            let mut deadline = next_poll.min(next_geometry);
+            if let Some(due) = burst.next_due() { deadline = deadline.min(due); }
+            // Events may unpark early. No callback sleeps or waits for the GUI.
+            std::thread::park_timeout(Duration::from_millis(deadline.saturating_sub(now).max(1)));
         }
     });
 }
@@ -840,11 +890,10 @@ pub fn apply_theme(app: &AppHandle) {
 
 /// Movement events update the live position immediately; a single background
 /// worker flushes the latest value so even a short drag is saved on disk.
-static WIDGET_POSITION_DIRTY: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static WIDGET_POSITION_SIGNAL: crate::coalesced_signal::CoalescedSignal =
+    crate::coalesced_signal::CoalescedSignal::new();
 
 pub fn remember_widget_position(app: &AppHandle, position: PhysicalPosition<i32>) {
-    use std::sync::atomic::Ordering;
     let Some(shared) = app.try_state::<crate::engine::Shared>() else { return };
     {
         let mut rt = shared.lock();
@@ -855,17 +904,14 @@ pub fn remember_widget_position(app: &AppHandle, position: PhysicalPosition<i32>
         rt.settings.system.widget_y = position.y;
         rt.settings.system.widget_position_set = true;
     }
-    WIDGET_POSITION_DIRTY.store(true, Ordering::Release);
+    WIDGET_POSITION_SIGNAL.mark();
 }
 
 pub fn spawn_widget_position_saver(app: AppHandle, shared: crate::engine::Shared) {
-    use std::sync::atomic::Ordering;
     std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_millis(700));
-        if WIDGET_POSITION_DIRTY.swap(false, Ordering::AcqRel) {
-            crate::persistence::request_save(&app, &shared);
-            crate::engine::refresh(&app, &shared);
-        }
+        WIDGET_POSITION_SIGNAL.wait_batch(std::time::Duration::from_millis(700));
+        crate::persistence::request_save(&app, &shared);
+        crate::engine::refresh(&app, &shared);
     });
 }
 

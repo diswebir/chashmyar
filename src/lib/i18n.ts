@@ -22,6 +22,8 @@ export type Theme = "dark" | "light";
 
 /** Strings added in v2.1 that do not appear in the generated dictionary. */
 const EXTRA: Record<string, string> = {
+  // The switch controls every in-app chime, not only the pre-break alert.
+  "صدای اعلان، تمرین کوتاه، استراحت و جریمه؛ در نصب تازه خاموش است": "Sounds for alerts, short exercises, breaks and penalties; off on fresh installs",
   // v2.4: additional gentle activities and capture status.
   "درایور درخواست Gamma را پذیرفت؛ اعمال رنگ تضمین نمی‌شود": "The driver accepted the Gamma request; actual display changes are not guaranteed",
   "لایه در روش‌های ضبط سازگار پنهان می‌شود؛ نتیجه را در ابزار ضبط خود بررسی کنید.": "The overlay is hidden from compatible capture methods; verify the result in your recorder.",
@@ -52,6 +54,8 @@ const EXTRA: Record<string, string> = {
   "بدون حبس یا فشار دادن نفس": "Breathe comfortably without holding your breath",
   "از بینی به‌آرامی نفس بکشید و اجازه دهید قفسه سینه باز شود.": "Breathe in gently through your nose and let your chest expand.",
   "بازدم را آرام انجام دهید و چند بار به‌راحتی تکرار کنید.": "Breathe out slowly and repeat comfortably a few times.",
+  // The duration is a saved setting, not a fixed 15-second label.
+  "کارت شناور {n} ثانیه‌ای — بدون قفل کردن کیبورد و ماوس": "A {n}-second floating card without locking the keyboard or mouse",
   // v2.3: clear alerts, accessible actions and evidence-based activity labels.
   "{n}٪": "{n}%",
   "بدون داده کافی": "Not enough data",

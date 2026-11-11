@@ -29,7 +29,28 @@ mod tests {
         assert!(settings.lock.eye_exercises && settings.lock.body_exercises && settings.lock.emergency_unlock);
         assert_eq!(settings.lock.rotate_seconds, 20);
         assert!(settings.system.autostart && settings.system.auto_start_timer_on_launch);
-        assert!(settings.system.eye_care_on_launch && settings.system.sound_enabled && settings.system.minimize_to_tray);
+        assert!(settings.system.eye_care_on_launch && settings.system.minimize_to_tray);
+        assert!(!settings.system.sound_enabled, "fresh installations are silent");
+    }
+
+    #[test]
+    fn sound_defaults_off_when_absent_but_saved_choices_survive_round_trip() {
+        // Both a missing group and a missing field must use the new default.
+        for value in [json!({}), json!({"system": {}}), json!({"system": {"autostart": false}})] {
+            let settings: super::state::Settings = serde_json::from_value(value).unwrap();
+            assert!(!settings.system.sound_enabled);
+        }
+        // Never migrate or overwrite an explicit choice from an older version.
+        for enabled in [false, true] {
+            let settings: super::state::Settings = serde_json::from_value(
+                json!({"system": {"soundEnabled": enabled}}),
+            ).unwrap();
+            assert_eq!(settings.system.sound_enabled, enabled);
+            let json = serde_json::to_value(&settings).unwrap();
+            assert_eq!(json["system"]["soundEnabled"], enabled);
+            let reloaded: super::state::Settings = serde_json::from_value(json).unwrap();
+            assert_eq!(reloaded.system.sound_enabled, enabled);
+        }
     }
 
     #[test]

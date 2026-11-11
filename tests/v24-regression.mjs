@@ -12,9 +12,20 @@ const eq = (actual, expected, message) => { assert.equal(actual, expected, messa
 const read = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('chashmyar.mock.snapshot')));
 const nav = (page, name) => page.locator('nav').getByRole('button', { name: new RegExp(name) });
 
-async function fresh({ snapshot, win, viewport = { width: 1180, height: 900 } } = {}) {
+async function fresh({ snapshot, win, trackSounds = false, viewport = { width: 1180, height: 900 } } = {}) {
   const context = await browser.newContext({ viewport });
   contexts.push(context);
+  if (trackSounds) await context.addInitScript(() => {
+    window.__chimeCount = 0;
+    const param = () => ({ value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} });
+    class FakeAudioContext {
+      constructor() { window.__chimeCount++; this.currentTime = 0; this.destination = {}; }
+      createOscillator() { return { type: '', frequency: param(), connect: (to) => to, start() {}, stop() {} }; }
+      createGain() { return { gain: param(), connect: (to) => to }; }
+      close() { return Promise.resolve(); }
+    }
+    Object.defineProperty(window, 'AudioContext', { value: FakeAudioContext, configurable: true });
+  });
   if (snapshot) await context.addInitScript((value) => localStorage.setItem('chashmyar.mock.snapshot', JSON.stringify(value)), snapshot);
   const page = await context.newPage();
   page.on('pageerror', (e) => errors.push(e.message));
@@ -59,6 +70,10 @@ try {
   ok(initial.settings.lock.eyeExercises && initial.settings.lock.bodyExercises && initial.settings.lock.emergencyUnlock, 'eye/body activities and emergency exit enabled');
   ok(initial.settings.system.autostart && initial.settings.system.autoStartTimerOnLaunch, 'startup and automatic timer are enabled');
   ok(initial.timer.phase === 'work' && initial.timer.running, 'fresh browser simulation starts the work timer');
+  await nav(main, 'پومودورو و تعویق').click();
+  await main.getByText('کارت شناور ۲۰ ثانیه‌ای — بدون قفل کردن کیبورد و ماوس').waitFor({ state: 'visible' });
+  ok(await main.getByText('کارت شناور ۲۰ ثانیه‌ای — بدون قفل کردن کیبورد و ماوس').isVisible(), 'Persian short-exercise duration matches saved default');
+  await nav(main, 'داشبورد').click();
 
   await checkSlider(main, 'دمای رنگ', 2700, 6500, 'fa');
   await checkSlider(main, 'روشنایی نمایشگر', 10, 100, 'fa');
@@ -76,6 +91,9 @@ try {
   await checkSlider(main, 'Night Kelvin', 2700, 6500, 'en');
   await checkSlider(main, 'Night brightness', 20, 100, 'en');
   ok((await main.getByTestId('capture-exclusion-status').innerText()).includes('could not be confirmed'), 'capture warning translated to English');
+  await nav(main, 'Pomodoro & snooze').click();
+  await main.getByText('A 20-second floating card without locking the keyboard or mouse').waitFor({ state: 'visible' });
+  ok(await main.getByText('A 20-second floating card without locking the keyboard or mouse').isVisible(), 'English short-exercise duration follows setting');
   await nav(main, 'Dashboard').click();
   await checkSlider(main, 'Colour temperature', 2700, 6500, 'en');
   await checkSlider(main, 'Screen brightness', 10, 100, 'en');
@@ -96,6 +114,27 @@ try {
     eq(style.background, theme === 'dark' ? 'rgb(17, 29, 45)' : 'rgb(255, 255, 255)', `${theme} short-exercise surface is solid`);
     eq(style.opacity, '1', `${theme} short-exercise opacity is one`);
   }
+
+  // The warning webview exists while hidden: its creation must not play a
+  // chime. A real visible warning should chime once, respecting soundEnabled.
+  const silentSeed = structuredClone(initial);
+  silentSeed.timer.warningVisible = false;
+  silentSeed.settings.system.soundEnabled = true;
+  const hiddenWarning = await fresh({ snapshot: silentSeed, win: 'snooze-alert', trackSounds: true, viewport: { width: 452, height: 320 } });
+  await hiddenWarning.waitForTimeout(350);
+  eq(await hiddenWarning.evaluate(() => window.__chimeCount), 0, 'creating hidden warning does not chime');
+  const activeSeed = structuredClone(silentSeed);
+  activeSeed.timer.warningVisible = true;
+  const activeWarning = await fresh({ snapshot: activeSeed, win: 'snooze-alert', trackSounds: true, viewport: { width: 452, height: 320 } });
+  await activeWarning.waitForFunction(() => window.__chimeCount === 1);
+  eq(await activeWarning.evaluate(() => window.__chimeCount), 1, 'active warning chimes exactly once');
+  await activeWarning.getByTestId('snooze-close').click();
+  await activeWarning.waitForTimeout(150);
+  eq(await activeWarning.evaluate(() => window.__chimeCount), 1, 'dismissing a warning does not chime again');
+  activeSeed.settings.system.soundEnabled = false;
+  const mutedWarning = await fresh({ snapshot: activeSeed, win: 'snooze-alert', trackSounds: true, viewport: { width: 452, height: 320 } });
+  await mutedWarning.waitForTimeout(350);
+  eq(await mutedWarning.evaluate(() => window.__chimeCount), 0, 'sound-disabled warning stays silent');
 
   const captureSeed = structuredClone(initial);
   captureSeed.eye.captureExcluded = true;
@@ -132,10 +171,14 @@ try {
   const legacy = structuredClone(initial);
   legacy.settings.eye.scheduleEnabled = false;
   legacy.settings.timer.autoStartNextWork = false;
+  legacy.settings.timer.microBreakSeconds = 15;
   legacy.settings.lock.rotateSeconds = 45;
   legacy.settings.system.autostart = false;
   legacy.settings.system.autoStartTimerOnLaunch = false;
   const preserved = await fresh({ snapshot: legacy });
+  await nav(preserved, 'پومودورو و تعویق').click();
+  await preserved.getByText('کارت شناور ۱۵ ثانیه‌ای — بدون قفل کردن کیبورد و ماوس').waitFor({ state: 'visible' });
+  ok(await preserved.getByText('کارت شناور ۱۵ ثانیه‌ای — بدون قفل کردن کیبورد و ماوس').isVisible(), 'saved 15-second exercise appears accurately');
   await nav(preserved, 'قفل صفحه و ورزش‌ها').click();
   await preserved.getByRole('slider', { name: 'فاصله نمایش تمرین بعدی', exact: true }).waitFor();
   eq(await preserved.getByRole('slider', { name: 'فاصله نمایش تمرین بعدی', exact: true }).getAttribute('aria-valuenow'), '45', 'saved 45-second exercise preference is preserved');

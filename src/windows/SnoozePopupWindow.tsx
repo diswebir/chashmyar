@@ -17,11 +17,15 @@ export default function SnoozePopupWindow() {
   const lang = snapshot.settings.system.language;
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  const warningWasVisible = useRef(false);
+  const soundEnabled = snapshot.settings.system.soundEnabled;
 
   useEffect(() => {
-    if (snapshot.settings.system.soundEnabled) playChime("warning");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // This webview is created hidden and kept alive. Playing on mount chimed
+    // at startup only; react to each actual warning instead.
+    if (timer.warningVisible && !warningWasVisible.current && soundEnabled) playChime("warning");
+    warningWasVisible.current = timer.warningVisible;
+  }, [timer.warningVisible, soundEnabled]);
 
   const act = async (action: () => Promise<void>) => {
     if (inFlight.current) return;

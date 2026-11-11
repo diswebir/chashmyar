@@ -2,18 +2,18 @@
 //!
 //! * Colour temperature (2700K – 6500K) is pushed straight into every display's
 //!   GPU LUT with Win32 `SetDeviceGammaRamp` (Tanner Helland's approximation).
-//! * All changes are **interpolated** (`lerp`) over a configurable 2 s window by a
-//!   background worker, so the colour-safe whitelist can hand the screen back to
-//!   neutral 6500K without a visible jump — and back again.
-//! * A 10 s re-assertion loop neutralises Night Light / driver overrides.
+//! * Changes are interpolated linearly over the saved transition duration
+//!   (2 s by default), so the color-safe hand-off is gradual.
+//! * A 10 s re-assertion loop maintains a requested non-neutral gamma ramp.
 //! * A detached `--gamma-watchdog <pid>` child restores 6500K the instant the
 //!   main process is killed or crashes.
 //! * The ramp is also restored on exit and from a panic hook.
 
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use crate::gamma_logic::{self, GammaTransition};
 
 /// Kelvin value considered "neutral" (identity LUT).
 pub const NEUTRAL_KELVIN: u32 = 6500;
@@ -23,14 +23,22 @@ static TOUCHED: AtomicBool = AtomicBool::new(false);
 static WORKER_STARTED: AtomicBool = AtomicBool::new(false);
 static WATCHDOG_STARTED: AtomicBool = AtomicBool::new(false);
 static REASSERT_STARTED: AtomicBool = AtomicBool::new(false);
+static GAMMA_STOPPED: AtomicBool = AtomicBool::new(false);
+// Serialize every main-process driver write. After stop-and-restore returns,
+// no queued interpolation/reassertion may overwrite the neutral ramp.
+static GAMMA_IO: Mutex<()> = Mutex::new(());
+static GAMMA_WORKER_THREAD: OnceLock<std::thread::Thread> = OnceLock::new();
 // This is the last API result, not proof that a driver actually applied the
 // ramp: Windows may silently reject a valid-looking ramp (especially in HDR).
 static GAMMA_AVAILABLE: AtomicBool = AtomicBool::new(true);
-/// Kelvin the engine is heading to.
-static TARGET: AtomicU32 = AtomicU32::new(NEUTRAL_KELVIN);
-/// Kelvin currently in the LUT (interpolated).
+// Store target and transition duration as one atomic value so rapid settings
+// changes cannot combine the target of one update with another duration.
+const fn gamma_config(kelvin: u32, duration_ms: u32) -> u64 {
+    ((kelvin as u64) << 32) | duration_ms as u64
+}
+static GAMMA_CONFIG: AtomicU64 = AtomicU64::new(gamma_config(NEUTRAL_KELVIN, 2000));
+/// Kelvin last successfully reported to the LUT.
 static CURRENT: AtomicU32 = AtomicU32::new(NEUTRAL_KELVIN);
-/// Poll interval of the lerp worker (ms).
 const LERP_STEP_MS: u64 = 100;
 
 static WATCHDOG: OnceLock<Mutex<Option<std::process::Child>>> = OnceLock::new();
@@ -146,13 +154,36 @@ fn push_ramp(ramp: &[u16]) -> bool {
     applied
 }
 
-#[cfg(not(windows))]
-fn push_ramp(_ramp: &[u16]) -> bool {
-    true
+#[cfg(all(not(windows), not(test)))]
+fn push_ramp(_ramp: &[u16]) -> bool { true }
+
+// Host-only test double: never compiled into the Windows application. It lets
+// the real worker be exercised for retries, idle parking, and shutdown races.
+#[cfg(all(not(windows), test))]
+pub(crate) mod test_driver {
+    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize};
+    pub static FAIL: AtomicBool = AtomicBool::new(false);
+    pub static CALLS: AtomicUsize = AtomicUsize::new(0);
+    pub static DELAY_MS: AtomicU32 = AtomicU32::new(0);
+    pub static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+    pub static LAST_NEUTRAL: AtomicBool = AtomicBool::new(true);
+}
+#[cfg(all(not(windows), test))]
+fn push_ramp(ramp: &[u16]) -> bool {
+    use test_driver::*;
+    CALLS.fetch_add(1, Ordering::SeqCst);
+    IN_FLIGHT.store(true, Ordering::SeqCst);
+    let delay = DELAY_MS.load(Ordering::SeqCst);
+    if delay != 0 { std::thread::sleep(Duration::from_millis(u64::from(delay))); }
+    let ok = !FAIL.load(Ordering::SeqCst);
+    if ok { LAST_NEUTRAL.store(ramp[767] == 65535, Ordering::SeqCst); }
+    IN_FLIGHT.store(false, Ordering::SeqCst);
+    ok
 }
 
-/// Applies a Kelvin value to the hardware LUT immediately (no interpolation).
-pub fn apply_gamma(kelvin: u32) -> bool {
+// Caller holds GAMMA_IO. Preserve CURRENT on failure: it is the last reported
+// successful value and permits a later neutral restore to be retried.
+fn apply_gamma_locked(kelvin: u32) -> bool {
     let kelvin = kelvin.clamp(MIN_KELVIN, NEUTRAL_KELVIN);
     let ok = push_ramp(&build_ramp(kelvin));
     GAMMA_AVAILABLE.store(ok, Ordering::SeqCst);
@@ -163,55 +194,87 @@ pub fn apply_gamma(kelvin: u32) -> bool {
     ok
 }
 
+/// Applies a Kelvin value to the hardware LUT immediately (no interpolation).
+pub fn apply_gamma(kelvin: u32) -> bool {
+    let _io = GAMMA_IO.lock();
+    if GAMMA_STOPPED.load(Ordering::SeqCst) && kelvin < NEUTRAL_KELVIN { return false; }
+    apply_gamma_locked(kelvin)
+}
+
 /// Whether the latest driver API call reported success. It is only a hint:
 /// SetDeviceGammaRamp may report success without changing the physical display.
-pub fn gamma_available() -> bool {
-    GAMMA_AVAILABLE.load(Ordering::SeqCst)
+pub fn gamma_available() -> bool { GAMMA_AVAILABLE.load(Ordering::SeqCst) }
+
+/// Kelvin last reported successfully to the LUT.
+pub fn current_kelvin() -> u32 { CURRENT.load(Ordering::SeqCst) }
+
+pub fn target_kelvin() -> u32 { (GAMMA_CONFIG.load(Ordering::SeqCst) >> 32) as u32 }
+
+fn wake_lerp_worker() {
+    if let Some(worker) = GAMMA_WORKER_THREAD.get() { worker.unpark(); }
 }
 
-/// Kelvin currently sitting in the LUT.
-pub fn current_kelvin() -> u32 {
-    CURRENT.load(Ordering::SeqCst)
-}
-
-pub fn target_kelvin() -> u32 {
-    TARGET.load(Ordering::SeqCst)
-}
-
-/// Sets the destination colour temperature; the worker interpolates towards it.
-pub fn set_target(kelvin: u32) {
+/// Set the target and saved duration together; repeated identical snapshots do
+/// not reset the transition or wake an idle worker.
+pub fn set_target(kelvin: u32, duration_ms: u32) {
+    if GAMMA_STOPPED.load(Ordering::SeqCst) { return; }
     let kelvin = kelvin.clamp(MIN_KELVIN, NEUTRAL_KELVIN);
-    TARGET.store(kelvin, Ordering::SeqCst);
+    let next = gamma_config(kelvin, gamma_logic::transition_ms(duration_ms));
+    let changed = GAMMA_CONFIG.swap(next, Ordering::SeqCst) != next;
     spawn_lerp_worker();
+    if changed { wake_lerp_worker(); }
 }
 
 /* -------------------------------------------------------------------------- */
-/*                            Smooth 2-second lerp                            */
+/*                         Event-driven, timed gamma lerp                      */
 /* -------------------------------------------------------------------------- */
 
 fn spawn_lerp_worker() {
-    if WORKER_STARTED.swap(true, Ordering::SeqCst) {
-        return;
-    }
-    std::thread::spawn(|| loop {
-        std::thread::sleep(Duration::from_millis(LERP_STEP_MS));
-
-        let target = TARGET.load(Ordering::SeqCst);
-        let current = CURRENT.load(Ordering::SeqCst);
-        if target == current {
-            continue;
+    if WORKER_STARTED.swap(true, Ordering::SeqCst) { return; }
+    std::thread::spawn(|| {
+        let _ = GAMMA_WORKER_THREAD.set(std::thread::current());
+        let epoch = Instant::now();
+        let now_ms = || epoch.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+        let mut active_config = None;
+        let mut transition = GammaTransition::new(NEUTRAL_KELVIN, NEUTRAL_KELVIN, 0, 2000);
+        loop {
+            if GAMMA_STOPPED.load(Ordering::SeqCst) { break; }
+            let config = GAMMA_CONFIG.load(Ordering::SeqCst);
+            let target = (config >> 32) as u32;
+            let duration = config as u32;
+            let current = CURRENT.load(Ordering::SeqCst);
+            if active_config != Some(config) {
+                transition = GammaTransition::new(current, target, now_ms(), duration);
+                active_config = Some(config);
+            }
+            if !gamma_logic::needs_attempt(current, target, gamma_available(), NEUTRAL_KELVIN) {
+                // No periodic 100 ms wakeups while settled. Unpark is durable,
+                // including when a new target arrives just before this call.
+                std::thread::park();
+                continue;
+            }
+            let next = transition.sample(now_ms());
+            if next == current && current != target {
+                std::thread::park_timeout(Duration::from_millis(LERP_STEP_MS));
+                continue;
+            }
+            let ok = {
+                let _io = GAMMA_IO.lock();
+                // Discard stale work, including anything queued before shutdown.
+                if GAMMA_STOPPED.load(Ordering::SeqCst)
+                    || GAMMA_CONFIG.load(Ordering::SeqCst) != config { continue; }
+                apply_gamma_locked(next)
+            };
+            if ok {
+                std::thread::park_timeout(Duration::from_millis(LERP_STEP_MS));
+            } else {
+                // A rejecting driver previously caused 10 hardware attempts per
+                // second indefinitely. Retry at most once per two seconds, and
+                // wake immediately for a changed target or shutdown.
+                active_config = None;
+                std::thread::park_timeout(Duration::from_millis(gamma_logic::RETRY_DELAY_MS));
+            }
         }
-
-        // 20 steps × 100 ms = 2 s regardless of the size of the jump.
-        let delta = target as i64 - current as i64;
-        let step = (delta.abs() / 20).max(1);
-        let next = if delta > 0 {
-            (current as i64 + step).min(target as i64)
-        } else {
-            (current as i64 - step).max(target as i64)
-        } as u32;
-
-        apply_gamma(next);
     });
 }
 
@@ -219,16 +282,27 @@ fn spawn_lerp_worker() {
 /*                        10-second re-assertion loop                         */
 /* -------------------------------------------------------------------------- */
 
-/// Windows Night Light, HDR toggles and some GPU drivers quietly overwrite the
-/// LUT. Re-applying our buffer every 10 s keeps the user's profile stable.
+/// Reapply only while ChashmYar actually requests a non-neutral ramp. When
+/// disabled or color-safe, repeatedly overwriting other color software with an
+/// identity ramp is both unnecessary and surprising.
 pub fn spawn_reassert_loop() {
-    if REASSERT_STARTED.swap(true, Ordering::SeqCst) {
-        return;
-    }
+    if REASSERT_STARTED.swap(true, Ordering::SeqCst) { return; }
     std::thread::spawn(|| loop {
         std::thread::sleep(Duration::from_secs(10));
-        let current = CURRENT.load(Ordering::SeqCst);
-        let _ = push_ramp(&build_ramp(current));
+        if GAMMA_STOPPED.load(Ordering::SeqCst) { break; }
+        let failed = {
+            let _io = GAMMA_IO.lock();
+            if GAMMA_STOPPED.load(Ordering::SeqCst) { break; }
+            let current = CURRENT.load(Ordering::SeqCst);
+            if target_kelvin() >= NEUTRAL_KELVIN || current >= NEUTRAL_KELVIN
+                || !TOUCHED.load(Ordering::SeqCst) { false }
+            else {
+                let ok = push_ramp(&build_ramp(current));
+                if !ok { GAMMA_AVAILABLE.store(false, Ordering::SeqCst); }
+                !ok
+            }
+        };
+        if failed { wake_lerp_worker(); }
     });
 }
 
@@ -236,12 +310,29 @@ pub fn spawn_reassert_loop() {
 /*                          Safe restore / panic hook                         */
 /* -------------------------------------------------------------------------- */
 
-/// Restores the neutral 6500K ramp (safe to call repeatedly / from any thread).
+/// Restore the neutral ramp without stopping the engine (tray/reset action).
 pub fn restore_gamma() {
-    TARGET.store(NEUTRAL_KELVIN, Ordering::SeqCst);
-    let _ = push_ramp(&build_ramp(NEUTRAL_KELVIN));
-    CURRENT.store(NEUTRAL_KELVIN, Ordering::SeqCst);
-    TOUCHED.store(false, Ordering::SeqCst);
+    let duration = GAMMA_CONFIG.load(Ordering::SeqCst) as u32;
+    GAMMA_CONFIG.store(gamma_config(NEUTRAL_KELVIN, duration), Ordering::SeqCst);
+    let ok = {
+        let _io = GAMMA_IO.lock();
+        apply_gamma_locked(NEUTRAL_KELVIN)
+    };
+    if !ok { crate::diag::log("gamma neutral restore failed; the worker will retry if needed"); }
+    wake_lerp_worker();
+}
+
+/// Permanent exit path: stop future warm writes *before* restoring. The lock
+/// waits for any in-flight write, so a stale worker cannot re-tint the screen
+/// after a successful reset. On failure leave the watchdog alive for exit.
+pub fn stop_and_restore_gamma() -> bool {
+    GAMMA_STOPPED.store(true, Ordering::SeqCst);
+    GAMMA_CONFIG.store(gamma_config(NEUTRAL_KELVIN, 2000), Ordering::SeqCst);
+    wake_lerp_worker();
+    let _io = GAMMA_IO.lock();
+    let ok = apply_gamma_locked(NEUTRAL_KELVIN);
+    if !ok { crate::diag::log("gamma shutdown restore failed; watchdog remains armed"); }
+    ok
 }
 
 pub fn install_panic_hook() {
@@ -250,8 +341,14 @@ pub fn install_panic_hook() {
         let previous = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
             crate::diag::log(format!("PANIC: {info}"));
-            restore_gamma();
-            stop_watchdog();
+            GAMMA_STOPPED.store(true, Ordering::SeqCst);
+            GAMMA_CONFIG.store(gamma_config(NEUTRAL_KELVIN, 2000), Ordering::SeqCst);
+            wake_lerp_worker();
+            // A panic could occur with GAMMA_IO already held on this thread.
+            // Never deadlock the panic hook; keep the watchdog armed either way.
+            if let Some(_io) = GAMMA_IO.try_lock() {
+                let _ = apply_gamma_locked(NEUTRAL_KELVIN);
+            }
             previous(info);
         }));
     });

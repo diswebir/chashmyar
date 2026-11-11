@@ -78,23 +78,7 @@ pub fn current() -> ForegroundInfo {
 
 /// Returns the first whitelist entry that matches, if any.
 pub fn matching_entry(whitelist: &[String], info: &ForegroundInfo) -> Option<String> {
-    let process = info.process.to_lowercase();
-    let title = info.title.to_lowercase();
-
-    for raw in whitelist {
-        let entry = raw.trim();
-        if entry.is_empty() {
-            continue;
-        }
-        let needle = entry.to_lowercase();
-        if (!process.is_empty() && process == needle)
-            || (!process.is_empty() && process.contains(needle.trim_end_matches(".exe")))
-            || (!title.is_empty() && title.contains(&needle))
-        {
-            return Some(entry.to_string());
-        }
-    }
-    None
+    crate::foreground_match::matching_entry(whitelist, &info.process, &info.title)
 }
 
 /// Background poller: updates runtime state and triggers a full refresh when the
@@ -103,6 +87,9 @@ pub fn spawn_watcher(app: AppHandle, shared: Shared) {
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_millis(1500));
 
+        // No process/title lookup is needed while color-safe mode is off.
+        // Enabling it is still picked up on the next normal 1.5 s tick.
+        if !shared.lock().settings.eye.color_safe_enabled { continue; }
         let info = current();
         let mut changed = false;
 

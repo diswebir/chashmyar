@@ -61,6 +61,7 @@ export interface SystemSettings {
   autostart: boolean;
   autoStartTimerOnLaunch: boolean;
   eyeCareOnLaunch: boolean;
+  /** Controls in-app alert, exercise, break and penalty chimes; off by default. */
   soundEnabled: boolean;
   minimizeToTray: boolean;
   /** v2 — micro widget placement */
@@ -218,7 +219,7 @@ export const DEFAULT_SETTINGS: Settings = {
     autostart: true,
     autoStartTimerOnLaunch: true,
     eyeCareOnLaunch: true,
-    soundEnabled: true,
+    soundEnabled: false,
     minimizeToTray: true,
     widgetMode: "docked",
     widgetX: 0,

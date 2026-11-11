@@ -5,10 +5,11 @@ use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use crate::coalesced_signal::CoalescedSignal;
 use crate::engine::Shared;
 
 static SAVE_LOCK: Mutex<()> = Mutex::new(());
-static SAVE_DIRTY: AtomicBool = AtomicBool::new(false);
+static SAVE_SIGNAL: CoalescedSignal = CoalescedSignal::new();
 static SAVE_WORKER_STARTED: AtomicBool = AtomicBool::new(false);
 
 use crate::state::Settings;
@@ -43,12 +44,12 @@ pub fn save_current(app: &AppHandle, shared: &Shared) {
 /// Coalesce bursts of edits on a background worker rather than synchronously
 /// writing the same settings file on every slider or button event.
 pub fn request_save(app: &AppHandle, shared: &Shared) {
-    SAVE_DIRTY.store(true, Ordering::Release);
+    SAVE_SIGNAL.mark();
     if SAVE_WORKER_STARTED.swap(true, Ordering::AcqRel) { return; }
     let app = app.clone();
     let shared = shared.clone();
     std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_millis(180));
-        if SAVE_DIRTY.swap(false, Ordering::AcqRel) { save_current(&app, &shared); }
+        SAVE_SIGNAL.wait_batch(std::time::Duration::from_millis(180));
+        save_current(&app, &shared);
     });
 }

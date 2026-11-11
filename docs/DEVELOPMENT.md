@@ -53,8 +53,9 @@ The installer downloads the WebView2 bootstrapper when needed, so installation m
 ## Tests
 
 ```powershell
-npm run test:logic      # host Rust unit tests for scoring, timer and overlay policy
-npm run test:compat     # serde compatibility of settings and daily records
+npm run test:logic      # pure Rust policies, timed interpolation, parked worker signal
+npm run test:windows-policy # source-integrity checks, not an interactive Windows test
+npm run test:compat     # saved data; on non-Windows also a fake-driver worker/shutdown test
 npm run test:release    # version, checksums and auto-release tests with local Git + fake gh
 npm run licenses:check  # compare notices with installed/locked dependencies
 npm run build
@@ -62,9 +63,9 @@ npx playwright install chromium
 npm run test:ui:all     # starts and stops a temporary local production preview
 ```
 
-`test:ui:all` runs the smoke, v2.3/v2.4 regression/stress and creator-card suites using Playwright and mock IPC. It picks a free localhost port and tears down the preview afterward. Alternatively, start `npm run dev` and run `npm run test:ui`, `npm run test:ui:v23`, `npm run test:ui:v24` or `npm run test:credits` individually; set `CHASHMYAR_TEST_URL` if needed. On a Linux CI host use `npx playwright install --with-deps chromium` if system libraries are missing.
+`test:ui:all` runs the smoke, v2.3/v2.4 regression/stress, sound-default and creator-card suites using Playwright and mock IPC. The sound suite uses a fake audio context and a Tauri event stub; it verifies the toggle, saved values and chime routing, not real sound output. The runner picks a free localhost port and tears down the preview afterward. Alternatively, start `npm run dev` and run `npm run test:ui`, `npm run test:ui:v23`, `npm run test:ui:v24`, `npm run test:sound` or `npm run test:credits` individually; set `CHASHMYAR_TEST_URL` if needed. On a Linux CI host use `npx playwright install --with-deps chromium` if system libraries are missing.
 
-The browser tests do **not** exercise WebView2, native keyboard/WinEvent hooks, real gamma, installer execution or system tray. Pure overlay-policy tests check event classification and duplicate-request decisions, not native hook delivery, actual popup latency or capture. Since a `main` push publishes automatically after CI checks, run the Windows acceptance checklist in the [release guide](RELEASE_GUIDE_FA.md) before pushing when practical; it is not a release gate. Avoid trying strict lock while unsaved work is open. The `--self-test` option is supplementary and writes to `%LOCALAPPDATA%\ChashmYar\startup.log`.
+The browser tests do **not** exercise WebView2, native keyboard/WinEvent hooks, real gamma, installer execution or system tray. The Linux/macOS fake-driver test exercises the actual gamma worker and a shutdown race, but not a Windows GPU. The Windows source-policy and pure overlay-policy tests check control flow, event classification and burst scheduling, not foreground behavior, WebView2 button interaction, native hook delivery, popup latency or capture. Since a `main` push publishes automatically after CI checks, run the Windows acceptance checklist in the [release guide](RELEASE_GUIDE_FA.md) before pushing when practical; it is not a release gate. Avoid trying strict lock while unsaved work is open. The `--self-test` option is supplementary and writes to `%LOCALAPPDATA%\ChashmYar\startup.log`.
 
 ## Versioning
 
@@ -74,17 +75,18 @@ node scripts/version.mjs check
 # node scripts/version.mjs set 2.5.0
 ```
 
-The automatic workflow computes a patch after the greater of the source baseline and existing stable tags; it applies the version to a tag-only commit, not to `main`. For example a `2.4.1` baseline with no newer tags yields `v2.4.2`. A deliberate `2.5.0` baseline yields at least `v2.5.1`. Do not bump or tag manually for normal pushes. `set` synchronizes the npm package and lockfile, Tauri config, Cargo manifest and the application's entry in Cargo.lock; edit `CHANGELOG.md` separately. `node scripts/version.mjs check --tag vX.Y.Z` succeeds on the matching release-tag checkout, not necessarily on baseline `main`. See [the Persian release guide](RELEASE_GUIDE_FA.md) for limits and recovery.
+The automatic workflow computes a patch after the greater of the source baseline and existing stable tags; it applies the version to a tag-only commit, not to `main`. For example a `2.4.3` baseline with no newer tags yields `v2.4.4`. A deliberate `2.5.0` baseline yields at least `v2.5.1`. Do not bump or tag manually for normal pushes. `set` synchronizes the npm package and lockfile, Tauri config, Cargo manifest and the application's entry in Cargo.lock; edit `CHANGELOG.md` separately. `node scripts/version.mjs check --tag vX.Y.Z` succeeds on the matching release-tag checkout, not necessarily on baseline `main`. See [the Persian release guide](RELEASE_GUIDE_FA.md) for limits and recovery.
 
 ## Dependencies and notices
 
-`THIRD_PARTY_NOTICES.txt` is generated from locked Windows-target Cargo metadata and installed non-dev npm dependencies, including an intentionally over-inclusive set of build dependencies. Some upstream crate archives omit their license files; documented pinned fallback texts are in `third-party/fallback-licenses/`. After a dependency update, run `npm run licenses:generate`, review the diff and source-offer obligations, and commit the updated notice. An unknown package without a license file fails notice generation rather than being silently omitted. The release workflow verifies the committed notices on Windows and uploads them beside the binaries.
+`THIRD_PARTY_NOTICES.txt` is generated from locked Windows-target Cargo metadata and installed non-dev npm dependencies, including an intentionally over-inclusive set of build dependencies. Some upstream crate archives omit their license files; documented pinned fallback texts are in `third-party/fallback-licenses/`. Tao 0.37.2 is a modified local Apache-2.0 path dependency; its source, license and modification notice must remain in `src-tauri/vendor/tao` (see `CHASHMYAR_PATCH.md`). Do not remove the patch based solely on version numbers: focusable notification windows and deliberate strict-lock focus have distinct requirements. After a dependency update, run `npm run licenses:generate`, review the diff and source-offer obligations, and commit the updated notice. An unknown package without a license file fails notice generation rather than being silently omitted. The release workflow verifies the committed notices on Windows and uploads them beside the binaries.
 
 ## Repository layout
 
 ```text
 src/                    React windows, components, i18n, state and IPC mock
 src-tauri/src/          Rust state, timer, analytics and Windows integrations
+src-tauri/vendor/tao/   documented Apache-2.0 Windows focus patch and original license
 src-tauri/installer/    NSIS localization
 src-tauri/icons/        application icons
 scripts/                version, notice, asset and release helpers

@@ -15,6 +15,7 @@ The screenshot shows the browser preview with mock data, not native Windows inte
 - Two explainable scores based on recorded timer outcomes, with no fabricated score when data is missing.
 - Persian/English localization, local settings and analytics, light/dark appearance.
 - Fresh installs enable Windows autostart after the first launch, start the timer on launch, enable the night schedule, and rotate the thirteen exercise guides every 20 seconds. Existing saved choices are retained.
+- In-app alert, short-exercise, break and penalty sounds are off on fresh installs. Enable them under System → Play alert sounds; an explicitly saved choice remains unchanged when upgrading.
 
 This is not a medical device. Scores do not establish eye health, actual exercise or concentration. Gamma behavior depends on hardware/driver/HDR. When enabled, emergency exit during a strict break is holding **Ctrl and Shift** together for the configured duration. Test strict mode in a safe environment first; Ctrl+Alt+Del cannot be blocked by an ordinary Windows application.
 
@@ -52,9 +53,9 @@ npx playwright install chromium
 npm run test:ui:all
 ```
 
-Browser tests use mock IPC. They do not verify a real installer, WebView2, keyboard hooks, gamma or tray behavior. The supplied v2.4.1 binaries were cross-built on Linux; the new event-driven overlay path has not been run on Windows in this environment. GitHub Actions is configured but has not yet been exercised in the user's repository.
+Browser tests use mock IPC. They do not verify a real installer, WebView2, keyboard hooks, gamma or tray behavior. The supplied v2.4.3 binaries were cross-built on Linux; the new focus and overlay paths have not been run on Windows in this environment. GitHub Actions is configured but has not yet been exercised in the user's repository.
 
-Every push to `main` is intended to increment the patch version, build Windows x64 and **publish a GitHub Release automatically** after its checks pass. With the `2.4.1` baseline and no later tags, the first release is normally `v2.4.2`. `main` keeps its baseline version; the release tag, source archive and binaries carry the new version. No manual tag or Publish button is required.
+Every push to `main` is intended to increment the patch version, build Windows x64 and **publish a GitHub Release automatically** after its checks pass. With the `2.4.3` baseline and no later tags, the first release is normally `v2.4.4`. `main` keeps its baseline version; the release tag, source archive and binaries carry the new version. No manual tag or Publish button is required.
 
 A public download requires a public repository, enabled Actions and permission to write releases. Failed checks, queue limits or superseded/out-of-order runs can prevent a release. Automated publication is not a native Windows acceptance test. Full instructions and recovery: [release guide](docs/RELEASE_GUIDE_FA.md).
 

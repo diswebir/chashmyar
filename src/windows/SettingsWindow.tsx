@@ -914,7 +914,9 @@ export default function SettingsWindow() {
                   <GlassCard>
                     <SectionHeading
                       title={t("تمرین کوتاه در حین کار")}
-                      subtitle={t("کارت شناور ۱۵ ثانیه‌ای — بدون قفل کردن کیبورد و ماوس")}
+                      subtitle={t("کارت شناور {n} ثانیه‌ای — بدون قفل کردن کیبورد و ماوس", {
+                        n: toLocalDigits(settings.timer.microBreakSeconds),
+                      })}
                       icon={<Coffee size={16} />}
                       action={
                         <button
@@ -1170,7 +1172,7 @@ export default function SettingsWindow() {
                           void patchSettings({ system: { soundEnabled: v } })
                         }
                         label={t("پخش صدای هشدار")}
-                        description={t("زنگ ملایم ۳۰ ثانیه پیش از استراحت و پایان آن")}
+                        description={t("صدای اعلان، تمرین کوتاه، استراحت و جریمه؛ در نصب تازه خاموش است")}
                       />
                       <Toggle
                         checked={settings.system.minimizeToTray}

@@ -47,8 +47,9 @@ pub fn refresh(app: &AppHandle, shared: &Shared) -> Snapshot {
         // Reflect the last driver result rather than assuming gamma is always
         // supported. A failed warm ramp must also activate the fallback layer.
         rt.gamma_supported = display::gamma_available();
-        // The lerp worker interpolates towards this value over ~2 s.
-        display::set_target(target);
+        // The worker honors the existing saved transition duration (2 s by
+        // default); identical timer snapshots do not restart the transition.
+        display::set_target(target, rt.settings.eye.transition_ms);
         rt.last_gamma_kelvin = Some(target);
         rt.gamma_applied = rt.gamma_supported && rt.settings.eye.enabled
             && !paused_by_whitelist && target < display::NEUTRAL_KELVIN;
@@ -215,8 +216,9 @@ pub fn safe_shutdown(app: &AppHandle) {
     windows::stop_overlay_event_hook();
     locker::release();
     focus_guard::stop();
-    display::restore_gamma();
-    display::stop_watchdog();
+    if display::stop_and_restore_gamma() {
+        display::stop_watchdog();
+    } // Otherwise keep the watchdog alive to attempt a reset after process exit.
     if let Some(shared) = app.try_state::<Shared>() {
         let pending = {
             let mut rt = shared.lock();
