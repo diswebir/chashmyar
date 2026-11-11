@@ -4,6 +4,9 @@ Changes to the application are recorded here. Version tags use stable semantic v
 
 ## Unreleased
 
+### Fixed
+- Restored readable contrast in the weekly chart's hover tooltip in the light theme: it now uses an opaque light surface with dark text. The dark-theme tooltip and chart data are unchanged; browser/mock regression checks cover both themes and languages.
+
 ### Branding and documentation
 - Replaced the previous app icon with the approved black-and-white eye design. Generated consistent PNGs and a seven-size Windows ICO; the same mark is used in the app header, tray's default icon, favicon and both READMEs. Previously built 2.4.3 executables are unchanged and do not contain this logo.
 - Refreshed Persian light/dark browser screenshots and expanded the Persian GitHub quickstart, English CI/release guide, user, architecture, development and security documentation. Screenshots use sample mock data.

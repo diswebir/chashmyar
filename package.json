@@ -24,6 +24,7 @@
     "test:credits": "node tests/credits-ui.mjs",
     "test:branding": "node tests/branding.mjs",
     "test:branding:ui": "node tests/branding-ui.mjs",
+    "test:chart": "node tests/chart-tooltip.mjs",
     "test:docs": "node tests/docs-links.mjs",
     "test:ui:all": "node scripts/run-ui-suite.mjs",
     "docs:capture": "node scripts/capture-docs.mjs",

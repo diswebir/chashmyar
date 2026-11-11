@@ -352,6 +352,14 @@ body {
   border-color: rgba(15, 23, 42, 0.12);
 }
 
+/* The chart's opaque dark tooltip does not match the /opacity popover selector
+   above. Give it a light surface when light-theme text colors are applied. */
+:root[data-theme="light"] .weekly-chart-tooltip {
+  background-color: #ffffff;
+  border-color: var(--line-strong);
+  box-shadow: 0 16px 36px -18px rgba(15, 23, 42, 0.38), 0 3px 10px -5px rgba(15, 23, 42, 0.18);
+}
+
 :root[data-theme="light"] .border-white\/20,
 :root[data-theme="light"] .border-white\/25 {
   border-color: rgba(15, 23, 42, 0.2);

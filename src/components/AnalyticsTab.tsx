@@ -93,7 +93,7 @@ function WeekChart({ week }: { week: DayPoint[] }) {
   }, [week]);
 
   return (
-    <div className="relative">
+    <div className="relative" data-testid="weekly-chart">
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label={t("نمودار هفت‌روزه زمان تایمر کاری و پایبندی به مراقبت چشم")}>
         <defs>
           <linearGradient id="barGrad" x1="0" y1="1" x2="0" y2="0"><stop offset="0%" stopColor="rgba(16,185,129,0.35)" /><stop offset="100%" stopColor="rgba(16,185,129,0.95)" /></linearGradient>
@@ -107,7 +107,7 @@ function WeekChart({ week }: { week: DayPoint[] }) {
           const barH = d.deepWorkMinutes / maxMinutes * chartH;
           const snoozeH = d.snoozeUsedCount / maxSnooze * chartH * 0.45;
           return <g key={d.date} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
-            <rect x={padLeft + slot * i} y={padTop} width={slot} height={chartH} fill={hover === i ? "rgba(148,163,184,0.07)" : "transparent"} rx="8" />
+            <rect data-testid="weekly-chart-day" x={padLeft + slot * i} y={padTop} width={slot} height={chartH} fill={hover === i ? "rgba(148,163,184,0.07)" : "transparent"} rx="8" />
             {barH > 0 && <rect x={xOf(i) - barW / 2} y={padTop + chartH - barH} width={barW} height={barH} rx="6" fill="url(#barGrad)" />}
             {snoozeH > 0 && <rect x={xOf(i) - barW / 2 - snoozeW - 5} y={padTop + chartH - snoozeH} width={snoozeW} height={snoozeH} rx="3" fill="#f59e0b" />}
           </g>;
@@ -120,7 +120,7 @@ function WeekChart({ week }: { week: DayPoint[] }) {
           <text x={xOf(i)} y={height - padBottom + 36} fontSize="9.5" textAnchor="middle" fill="var(--muted)">{getLang() === "fa" ? toPersianDigits(d.jalaliDate) : formatShortDate(d.date)}</text>
         </g>)}
       </svg>
-      {hover !== null && week[hover] && <div className="pointer-events-none absolute top-2 z-10 w-48 -translate-x-1/2 rounded-2xl border border-white/12 bg-ink-800 p-3 text-[11px] shadow-xl" style={{ left: `${Math.max(14, Math.min(86, xOf(hover) / width * 100))}%` }} dir={getLang() === "fa" ? "rtl" : "ltr"}>
+      {hover !== null && week[hover] && <div data-testid="weekly-chart-tooltip" className="weekly-chart-tooltip pointer-events-none absolute top-2 z-10 w-48 -translate-x-1/2 rounded-2xl border border-white/12 bg-ink-800 p-3 text-[11px] shadow-xl" style={{ left: `${Math.max(14, Math.min(86, xOf(hover) / width * 100))}%` }} dir={getLang() === "fa" ? "rtl" : "ltr"}>
         <div className="flex justify-between gap-2 font-semibold text-slate-100"><span>{weekdayName(week[hover].weekday)}</span><span>{scoreText(week[hover].score)}</span></div>
         <div className="mt-2 flex justify-between gap-2 text-slate-400"><span>{t("زمان تایمر کاری")}</span><span>{minutesText(week[hover].deepWorkMinutes)}</span></div>
         <div className="mt-1 flex justify-between gap-2 text-slate-400"><span>{t("تعویق")}</span><span>{t("{n} بار", { n: toPersianDigits(week[hover].snoozeUsedCount) })}</span></div>
