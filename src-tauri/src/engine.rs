@@ -50,6 +50,13 @@ pub fn refresh(app: &AppHandle, shared: &Shared) -> Snapshot {
         // The worker honors the existing saved transition duration (2 s by
         // default); identical timer snapshots do not restart the transition.
         display::set_target(target, rt.settings.eye.transition_ms);
+        // Full-screen colour-vision assistance is independent of the warm
+        // filter switch, but yields to the same Color-Safe whitelist.
+        crate::color_filter::set_target(
+            crate::color_vision::Profile::parse(&rt.settings.eye.color_vision_profile),
+            rt.settings.eye.color_vision_strength,
+            paused_by_whitelist,
+        );
         rt.last_gamma_kelvin = Some(target);
         rt.gamma_applied = rt.gamma_supported && rt.settings.eye.enabled
             && !paused_by_whitelist && target < display::NEUTRAL_KELVIN;
@@ -216,6 +223,9 @@ pub fn safe_shutdown(app: &AppHandle) {
     windows::stop_overlay_event_hook();
     locker::release();
     focus_guard::stop();
+    if !crate::color_filter::stop_and_restore() {
+        crate::diag::log("color vision restore could not be confirmed during shutdown");
+    }
     if display::stop_and_restore_gamma() {
         display::stop_watchdog();
     } // Otherwise keep the watchdog alive to attempt a reset after process exit.

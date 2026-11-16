@@ -11,6 +11,13 @@ const taoState = read('src-tauri/vendor/tao/src/platform_impl/windows/window_sta
 const taoWindow = read('src-tauri/vendor/tao/src/platform_impl/windows/window.rs');
 const cargo = read('src-tauri/Cargo.toml');
 const lock = read('src-tauri/Cargo.lock');
+const popupLayer = read('src-tauri/src/popup_layer.rs');
+const colorFilter = read('src-tauri/src/color_filter.rs');
+const colorVision = read('src-tauri/src/color_vision.rs');
+const engine = read('src-tauri/src/engine.rs');
+const state = read('src-tauri/src/state.rs');
+const persistence = read('src-tauri/src/persistence.rs');
+const commands = read('src-tauri/src/commands.rs');
 
 function sliceBetween(source, start, end) {
   const i = source.indexOf(start);
@@ -47,4 +54,27 @@ ok(existsSync('src-tauri/vendor/tao/LICENSE') && existsSync('src-tauri/vendor/ta
 ok(win.includes('p::EVENT_OBJECT_CREATE') && win.includes('p::EVENT_SYSTEM_CAPTURESTART'), 'earlier popup signals are registered');
 ok(win.includes('OVERLAY_BURST_REQUESTED') && win.includes('SWP_ASYNCWINDOWPOS') && win.includes('SWP_NOACTIVATE'), 'overlay remains asynchronous and nonactivating');
 ok(win.includes('WDA_EXCLUDEFROMCAPTURE') && win.includes('set_ignore_cursor_events(true)'), 'capture request and click-through behavior remain in place');
+for (const label of ['snooze', 'coach', 'update_notice']) {
+  ok(sliceBetween(win, `if let Some(w) = &${label}`, '\n    }').includes('protect_notification_layer(app, w);'), `${label} registers same-thread popup protection`);
+}
+ok(popupLayer.includes('WM_WINDOWPOSCHANGING') && popupLayer.includes('WM_SHOWWINDOW') && popupLayer.includes('pos.insert_after = filter'), 'own popup is ordered below the overlay before show/activation completes');
+ok(popupLayer.includes('DefSubclassProc') && popupLayer.includes('RemoveWindowSubclass') && !popupLayer.includes('WM_MOUSEACTIVATE'), 'notification focus/input remains on the normal window-proc path');
+ok(win.includes('popup_layer::set_filter_enabled(visible)') && win.includes('popup_layer::set_filter_enabled(false)'), 'popup protection follows filter state and shutdown');
+for (const [start, end] of [['fn show_snooze_inner(', 'pub fn show_snooze('], ['fn show_micro_break_inner(', 'pub fn show_micro_break(']]) {
+  ok(!sliceBetween(win, start, end).includes('w.set_always_on_top(true)'), `${start} does not re-promote above overlay after show`);
+}
+// These are source wiring checks, not proof of native screen effects.
+ok(cargo.includes('"Win32_UI_Magnification"'), 'Windows Magnification bindings are enabled');
+for (const api of ['MagInitialize', 'MagGetFullscreenColorEffect', 'MagSetFullscreenColorEffect', 'MagGetFullscreenTransform', 'MagUninitialize']) {
+  ok(colorFilter.includes(api), `${api} is wired in the native worker`);
+}
+ok(colorFilter.includes('#[cfg(all(windows, not(test)))]') && colorFilter.includes('#[cfg(test)]'), 'native backend is isolated from standalone fake-driver tests');
+const colorTarget = sliceBetween(engine, 'crate::color_filter::set_target(', ');');
+ok(colorTarget.includes('color_vision_profile') && colorTarget.includes('color_vision_strength') && colorTarget.includes('paused_by_whitelist'), 'vision target uses saved settings and color-safe state');
+ok(!colorTarget.includes('eye.enabled'), 'colour-vision target does not depend on the warm-light switch');
+ok(state.includes('color_vision_profile: "off".into()') && state.includes('color_vision_strength: 60'), 'saved-settings default is opt-in');
+ok(state.includes('crate::color_filter::status().as_str()'), 'native worker status enters the serialized snapshot');
+ok(persistence.includes('settings.eye.normalize_color_vision()') && commands.match(/normalize_color_vision\(\)/g)?.length >= 2, 'load, full update and patch normalize vision settings');
+ok(engine.includes('crate::color_filter::stop_and_restore()') && read('src-tauri/src/display.rs').includes('crate::color_filter::panic_stop()'), 'normal shutdown and panic request restoration');
+ok(colorVision.includes('same_matrix(&current, &last)') && colorVision.includes('same_matrix(&current, &IDENTITY)'), 'policy checks observed and last-owned matrices before writes');
 console.log(`PASS: ${checks} Windows source-policy assertions (not an interactive Windows test)`);

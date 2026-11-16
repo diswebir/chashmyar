@@ -1,11 +1,14 @@
 /** End-to-end offline tests: real local Git remotes + a fake GitHub CLI. */
 import assert from 'node:assert/strict';
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as crypto from 'node:crypto';
+import { testSigner } from './fixtures/test-updater-signature.mjs';
 
+const signer = testSigner();
+const signingEnv = { CHASHMYAR_UPDATER_PUBLIC_KEY: signer.publicKey, GITHUB_REPOSITORY: 'example/ChashmYar' };
 const project = process.cwd();
 const temp = mkdtempSync(join(tmpdir(), 'chashmyar-auto-release-test-'));
 const repo = join(temp, 'repo');
@@ -27,7 +30,7 @@ function script(file, args = [], env = {}, allowFailure = false) {
 function auto(commandName, source, version, allowFailure = false) {
   return script('scripts/auto-release.mjs', [commandName], {
     RELEASE_SOURCE: source, RELEASE_VERSION: version || '', RELEASE_TAG: version ? `v${version}` : '',
-    GITHUB_REPOSITORY: 'example/ChashmYar',
+    ...signingEnv,
     CHASHMYAR_TEST_GH: resolve(project, 'tests/fixtures/fake-auto-gh.cjs'),
     CHASHMYAR_FAKE_AUTO_GH_STATE: stateFile,
   }, allowFailure);
@@ -39,14 +42,22 @@ function setFailure(failure) { const s = fakeState(); s.failOnce = failure; save
 function checkFailed(result, message) { ok(result.status !== 0, `${message}; stdout=${result.stdout}, stderr=${result.stderr}`); }
 function selectSource(source) { git('reset', '--hard'); git('checkout', '--detach', source); }
 function makePe(machine, version) {
-  const bytes = Buffer.alloc(256); bytes.write('MZ', 0); bytes.writeUInt32LE(0x80, 0x3c);
-  bytes.write('PE\0\0', 0x80, 'binary'); bytes.writeUInt16LE(machine, 0x84); bytes.write(version, 0xc0); return bytes;
+  const bytes = Buffer.alloc(768); bytes.write('MZ', 0); bytes.writeUInt32LE(0x80, 0x3c);
+  bytes.write('PE\0\0', 0x80, 'binary'); bytes.writeUInt16LE(machine, 0x84); bytes.write(version, 0xc0);
+  if (machine === 0x8664) {
+    bytes.write('CHASHMYAR_PORTABLE_UPDATER_V1', 0xe0);
+    bytes.write(signer.publicKey.trim(), 0x120);
+  }
+  return bytes;
 }
 function stageAssets(version) {
   mkdirSync(join(repo, 'release/windows'), { recursive: true });
-  writeFileSync(join(repo, `release/windows/ChashmYar_${version}_x64-setup.exe`), makePe(0x14c, version));
-  writeFileSync(join(repo, `release/windows/ChashmYar-${version}-portable.exe`), makePe(0x8664, version));
-  script('scripts/stage-release.mjs', ['--tag', `v${version}`]);
+  mkdirSync(join(repo, 'release/updater'), { recursive: true });
+  for (const [name, bytes] of [[`ChashmYar_${version}_x64-setup.exe`, makePe(0x14c, version)], [`ChashmYar-${version}-portable.exe`, makePe(0x8664, version)]]) {
+    writeFileSync(join(repo, 'release/windows', name), bytes);
+    writeFileSync(join(repo, 'release/updater', `${name}.sig`), signer.sign(bytes, version, name));
+  }
+  script('scripts/stage-release.mjs', ['--tag', `v${version}`], signingEnv);
 }
 function prepareBuild(source, version, checkTamper = false) {
   script('scripts/version.mjs', ['set', version]);
@@ -91,7 +102,7 @@ try {
   git('config', 'tag.gpgSign', 'false');
   const inputs = ['.gitignore', '.gitattributes', 'package.json', 'package-lock.json',
     'src-tauri/tauri.conf.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock',
-    'scripts/version.mjs', 'scripts/stage-release.mjs', 'scripts/auto-release.mjs'];
+    'scripts/version.mjs', 'scripts/stage-release.mjs', 'scripts/updater-signatures.mjs', 'scripts/auto-release.mjs'];
   for (const file of inputs) {
     mkdirSync(dirname(join(repo, file)), { recursive: true });
     cpSync(join(project, file), join(repo, file));
@@ -99,7 +110,7 @@ try {
   writeFileSync(join(repo, 'LICENSE'), 'fixture license\n');
   writeFileSync(join(repo, 'THIRD_PARTY_NOTICES.txt'), 'fixture notices\n');
   writeFileSync(join(repo, 'app.txt'), 'A\n');
-  script('scripts/version.mjs', ['set', '2.4.1']);
+  script('scripts/version.mjs', ['set', '2.4.7']);
   git('add', '.');
   git('-c', 'commit.gpgsign=false', 'commit', '-m', 'User push A');
   git('push', '-u', 'origin', 'main');
@@ -108,23 +119,90 @@ try {
   saveState({ calls: [], releases: {}, failOnce: null });
 
   const first = plan(a);
-  eq(first.version, '2.4.2', 'first push gets baseline patch plus one');
-  eq(first.reason, 'new-patch', 'first release allocates a new tag');
+  eq(first.version, '2.4.7', 'without any tags, the first push uses the 2.4.7 baseline');
+  eq(first.reason, 'new-baseline', 'first release allocates the baseline itself');
+  // Match the real repository's current history, then probe collisions without
+  // ever moving or overwriting the existing tag.
+  git('tag', 'v2.4.6', a);
+  git('push', 'origin', 'refs/tags/v2.4.6:refs/tags/v2.4.6');
+  eq(plan(a).version, '2.4.7', 'a lower 2.4.6 tag still allocates baseline 2.4.7');
+  git('tag', 'v2.4.7', a);
+  eq(plan(a).version, '2.4.8', 'a manually occupied baseline advances the patch');
+  eq(plan(a).reason, 'new-patch', 'occupied baseline reports a patch allocation');
+  git('tag', 'v2.4.9', a);
+  eq(plan(a).version, '2.4.10', 'a higher manual tag, not the baseline, determines the next patch');
+  git('tag', 'v2.4.65535', a);
+  checkFailed(auto('plan', a, undefined, true), 'patch overflow fails closed');
+  git('tag', '-d', 'v2.4.7', 'v2.4.9', 'v2.4.65535');
+
+  // A baseline at the component limit is usable once if still untagged; after
+  // that it must not overflow. A newer minor baseline resolves the limit.
+  script('scripts/version.mjs', ['set', '2.4.65535']);
+  git('add', '--', 'package.json', 'package-lock.json', 'src-tauri/tauri.conf.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock');
+  git('commit', '-m', 'Fixture maximum patch baseline');
+  const maxPatchSource = git('rev-parse', 'HEAD');
+  git('update-ref', 'refs/remotes/origin/main', maxPatchSource);
+  git('tag', 'v2.4.65534', maxPatchSource);
+  eq(plan(maxPatchSource).version, '2.4.65535', 'unreleased maximum patch baseline can be used once');
+  git('tag', 'v2.4.65535', maxPatchSource);
+  checkFailed(auto('plan', maxPatchSource, undefined, true), 'an occupied maximum patch is not incremented past 65535');
+  script('scripts/version.mjs', ['set', '2.5.0']);
+  git('add', '--', 'package.json', 'package-lock.json', 'src-tauri/tauri.conf.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock');
+  git('commit', '-m', 'Fixture new minor baseline');
+  const newMinorSource = git('rev-parse', 'HEAD');
+  git('update-ref', 'refs/remotes/origin/main', newMinorSource);
+  eq(plan(newMinorSource).version, '2.5.0', 'a newer minor baseline clears the previous patch limit');
+  git('tag', '-d', 'v2.4.65534', 'v2.4.65535');
+  git('update-ref', 'refs/remotes/origin/main', a);
+  git('checkout', '--detach', a);
+
+  // Noncanonical but valid source JSON can legitimately cause only one of
+  // the five files to change after setting an already-current version.
+  const subsetPkg = join(repo, 'package.json');
+  writeFileSync(subsetPkg, JSON.stringify(JSON.parse(readFileSync(subsetPkg, 'utf8'))) + '\n');
+  git('add', 'package.json'); git('commit', '-m', 'Fixture compact manifest');
+  const subsetSource = git('rev-parse', 'HEAD');
+  git('update-ref', 'refs/remotes/origin/main', subsetSource);
+  script('scripts/version.mjs', ['set', '2.4.7']);
+  auto('stamp', subsetSource, '2.4.7');
+  eq(git('diff', '--cached', '--name-only'), 'package.json', 'stamping accepts a valid subset of changed version files');
+  auto('verify-build', subsetSource, '2.4.7');
+  git('reset', '--hard', a);
+  git('update-ref', 'refs/remotes/origin/main', a);
+
+  // An unchanged baseline used to fail because the old stamper demanded all
+  // five manifests be modified. Conversely, accepting filenames alone would
+  // allow unrelated manifest edits into a release: those must fail as well.
+  const pkgPath = join(repo, 'package.json');
+  const tamperedPkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  tamperedPkg.description += ' unexpected change';
+  writeFileSync(pkgPath, JSON.stringify(tamperedPkg, null, 2) + '\n');
+  checkFailed(auto('stamp', a, first.version, true), 'unrelated edits inside a version file are rejected');
+  git('reset', '--hard', a);
+  if (process.platform !== 'win32') {
+    chmodSync(pkgPath, 0o755);
+    checkFailed(auto('stamp', a, first.version, true), 'version-file permission changes are rejected');
+    git('reset', '--hard', a);
+  }
   prepareBuild(a, first.version, true);
   const firstTree = JSON.parse(readFileSync(join(repo, 'release/auto-release.json'), 'utf8')).tree;
+  eq(firstTree, git('rev-parse', `${a}^{tree}`), 'same-version baseline keeps the exact original source tree');
   auto('publish', a, first.version);
   let state = fakeState();
-  const releaseA = state.releases['v2.4.2'];
-  ok(releaseA && releaseA.draft === false, 'five assets are automatically published');
-  eq(releaseA.assets.length, 5, 'exactly five assets are published');
+  const releaseA = state.releases['v2.4.7'];
+  ok(releaseA && releaseA.draft === false, 'signed assets are automatically published');
+  eq(state.latestTag, 'v2.4.7', 'published release explicitly becomes Latest for the updater endpoint');
+  ok(state.calls.some(c => c[0] === 'api' && c[1] === 'repos/example/ChashmYar/releases/latest'),
+    'publication confirms the updater endpoint selects the intended release');
+  eq(releaseA.assets.length, 8, 'exactly eight assets are published');
   ok(state.calls.some(c => c[0] === 'api' && c[1].endsWith('/releases') && c.includes('POST')
     && c.includes('draft=true')), 'release is staged as a draft after the remote tag is verified');
   ok(state.calls.some(c => c[0] === 'api' && /\/releases\/\d+$/.test(c[1])
     && c.includes('PATCH') && c.includes('draft=false')), 'draft is published automatically by verified ID');
   ok(state.calls.every(c => !c.includes('--clobber')), 'automation never clobbers release assets');
   ok(state.calls.every(c => !/\/releases\/tags\//.test(c[1] || '')), 'draft discovery does not use the published-only tag endpoint');
-  eq(git('rev-parse', 'v2.4.2^{tree}'), firstTree, 'tagged source tree matches the build');
-  eq(git('rev-parse', 'v2.4.2^{commit}^'), a, 'tag commit has the pushed commit as its parent');
+  eq(git('rev-parse', 'v2.4.7^{tree}'), firstTree, 'tagged source tree matches the build');
+  eq(git('rev-parse', 'v2.4.7^{commit}^'), a, 'tag commit has the pushed commit as its parent');
   eq(git('ls-remote', '--heads', 'origin', 'refs/heads/main').split(/\s+/)[0], a, 'publication never commits back to main');
 
   // Model Windows checkout conversion: Git must normalize the CRLF working
@@ -134,8 +212,8 @@ try {
   command('git', ['config', 'core.autocrlf', 'true'], { cwd: crlfRepo });
   command('git', ['checkout', '--detach', a], { cwd: crlfRepo });
   ok(readFileSync(join(crlfRepo, 'src-tauri/Cargo.toml'), 'utf8').includes('\r\n'), 'CRLF checkout simulates Windows line endings');
-  const crlfEnv = { RELEASE_SOURCE: a, RELEASE_VERSION: '2.4.2', RELEASE_TAG: 'v2.4.2', GITHUB_OUTPUT: '' };
-  command(process.execPath, ['scripts/version.mjs', 'set', '2.4.2'], { cwd: crlfRepo, env: crlfEnv });
+  const crlfEnv = { RELEASE_SOURCE: a, RELEASE_VERSION: '2.4.7', RELEASE_TAG: 'v2.4.7', GITHUB_OUTPUT: '' };
+  command(process.execPath, ['scripts/version.mjs', 'set', '2.4.7'], { cwd: crlfRepo, env: crlfEnv });
   command(process.execPath, ['scripts/auto-release.mjs', 'stamp'], { cwd: crlfRepo, env: crlfEnv });
   eq(JSON.parse(readFileSync(join(crlfRepo, 'release/auto-release.json'), 'utf8')).tree, firstTree,
     'Windows-style checkout and Linux checkout produce the same tagged tree');
@@ -168,28 +246,48 @@ try {
   // Rerunning an already public version verifies it and performs no writes.
   selectSource(a);
   eq(plan(a).reason, 'resume-existing-tag', 'same source reuses its existing tag');
-  prepareBuild(a, '2.4.2');
+  prepareBuild(a, '2.4.7');
   const beforeRerun = mutationCount(fakeState());
-  auto('publish', a, '2.4.2');
+  auto('publish', a, '2.4.7');
   state = fakeState();
   eq(mutationCount(state), beforeRerun, 'published release rerun does not mutate assets or release');
   ok(state.calls.some(c => c[1] === 'download' && c.includes('SHA256SUMS.txt')), 'published release checks its manifest');
 
   // A corrupted existing public release is reported, never overwritten.
-  selectSource(a); prepareBuild(a, '2.4.2');
+  selectSource(a); prepareBuild(a, '2.4.7');
   state = fakeState();
-  const originalDigest = state.releases['v2.4.2'].assets[0].digest;
-  state.releases['v2.4.2'].assets[0].digest = 'sha256:' + '0'.repeat(64);
+  const originalDigest = state.releases['v2.4.7'].assets[0].digest;
+  state.releases['v2.4.7'].assets[0].digest = 'sha256:' + '0'.repeat(64);
   const beforeCorrupt = mutationCount(state); saveState(state);
-  checkFailed(auto('publish', a, '2.4.2', true), 'corrupted published digest is detected');
+  checkFailed(auto('publish', a, '2.4.7', true), 'corrupted published digest is detected');
   state = fakeState(); eq(mutationCount(state), beforeCorrupt, 'corrupt public release is not overwritten');
-  state.releases['v2.4.2'].assets[0].digest = originalDigest; saveState(state);
+  state.releases['v2.4.7'].assets[0].digest = originalDigest; saveState(state);
 
   const b = newMainCommit('B');
   const second = plan(b);
-  eq(second.version, '2.4.3', 'new push increments the tag even though main keeps its baseline version');
-  prepareBuild(b, second.version); auto('publish', b, second.version);
-  ok(fakeState().releases['v2.4.3']?.draft === false, 'second push publishes a new version');
+  eq(second.version, '2.4.8', 'new push increments the tag even though main keeps its baseline version');
+  script('scripts/version.mjs', ['set', second.version]);
+  const changedDuringBump = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  changedDuringBump.description += ' hidden change';
+  writeFileSync(pkgPath, JSON.stringify(changedDuringBump, null, 2) + '\n');
+  checkFailed(auto('stamp', b, second.version, true), 'extra manifest edits are rejected even when all five version files changed');
+  git('reset', '--hard', b);
+  prepareBuild(b, second.version);
+  const secondTree = JSON.parse(readFileSync(join(repo, 'release/auto-release.json'), 'utf8')).tree;
+  command('git', ['fetch', 'origin'], { cwd: crlfRepo });
+  command('git', ['checkout', '--detach', b], { cwd: crlfRepo });
+  const bumpedCrlfEnv = { RELEASE_SOURCE: b, RELEASE_VERSION: second.version, RELEASE_TAG: `v${second.version}`, GITHUB_OUTPUT: '' };
+  command(process.execPath, ['scripts/version.mjs', 'set', second.version], { cwd: crlfRepo, env: bumpedCrlfEnv });
+  command(process.execPath, ['scripts/auto-release.mjs', 'stamp'], { cwd: crlfRepo, env: bumpedCrlfEnv });
+  eq(JSON.parse(readFileSync(join(crlfRepo, 'release/auto-release.json'), 'utf8')).tree, secondTree,
+    'Windows-style checkout and Linux agree after a version bump too');
+  state = fakeState(); state.staleLatestReads = 1; state.staleLatestTag = 'v2.4.7'; saveState(state);
+  const beforeLatestReads = state.calls.filter(c => c[1] === 'repos/example/ChashmYar/releases/latest').length;
+  auto('publish', b, second.version);
+  state = fakeState();
+  ok(state.releases['v2.4.8']?.draft === false, 'second push publishes a new version');
+  ok(state.calls.filter(c => c[1] === 'repos/example/ChashmYar/releases/latest').length >= beforeLatestReads + 2,
+    'Latest confirmation retries a temporarily stale GitHub response');
   selectSource(a);
   const stale = plan(a);
   ok(stale.skip && stale.reason === 'superseded-by-newer-source', 'out-of-order old push is skipped rather than rolling back');
@@ -203,109 +301,136 @@ try {
   saveState(state);
   // A network failure after tag creation is resumed with the same patch.
   const c = newMainCommit('C');
-  const third = plan(c); eq(third.version, '2.4.4', 'third push is numbered sequentially');
+  const third = plan(c); eq(third.version, '2.4.9', 'third push is numbered sequentially');
   prepareBuild(c, third.version); setFailure('create');
   checkFailed(auto('publish', c, third.version, true), 'failed release creation does not publish');
-  ok(git('ls-remote', '--tags', '--refs', 'origin', 'refs/tags/v2.4.4').length > 0, 'tag survived interrupted publication');
+  ok(git('ls-remote', '--tags', '--refs', 'origin', 'refs/tags/v2.4.9').length > 0, 'tag survived interrupted publication');
   selectSource(c);
-  const resumed = plan(c); eq(resumed.version, '2.4.4', 'retry resumes the existing version instead of bumping again');
+  const resumed = plan(c); eq(resumed.version, '2.4.9', 'retry resumes the existing version instead of bumping again');
   eq(resumed.reason, 'resume-existing-tag', 'retry identifies the tag and source');
   prepareBuild(c, resumed.version); auto('publish', c, resumed.version);
   state = fakeState();
-  ok(state.releases['v2.4.4']?.draft === false, 'interrupted creation can be resumed');
+  ok(state.releases['v2.4.9']?.draft === false, 'interrupted creation can be resumed');
   ok(state.calls.some(ca => /\/releases\?per_page=100&page=2$/.test(ca[1] || '')), 'release discovery scans later pages');
   for (let i = 0; i < 102; i++) delete state.releases[`fixture-${i}`];
   saveState(state);
 
   // A release-list failure must not be mistaken for a missing draft.
   const d = newMainCommit('D'); const fourth = plan(d);
-  eq(fourth.version, '2.4.5', 'fourth push increments patch');
+  eq(fourth.version, '2.4.10', 'fourth push increments patch');
   prepareBuild(d, fourth.version); setFailure('list');
   checkFailed(auto('publish', d, fourth.version, true), 'release listing failure aborts publication');
-  ok(!fakeState().releases['v2.4.5'], 'list failure did not create or overwrite a release');
+  ok(!fakeState().releases['v2.4.10'], 'list failure did not create or overwrite a release');
   // A partially uploaded matching draft can be completed without --clobber.
   selectSource(d); prepareBuild(d, fourth.version);
-  state = fakeState(); state.delayDigestOnce = 'ChashmYar_2.4.5_x64-setup.exe'; saveState(state);
-  setFailure('upload:ChashmYar-2.4.5-portable.exe');
+  state = fakeState(); state.delayDigestOnce = 'ChashmYar_2.4.10_x64-setup.exe'; saveState(state);
+  setFailure('upload:ChashmYar-2.4.10-portable.exe');
   const delayedDigestRun = auto('publish', d, fourth.version, true);
   checkFailed(delayedDigestRun, 'upload failure leaves an unpublished draft');
   ok(/Waiting for GitHub SHA-256 digests/.test(delayedDigestRun.stdout), 'temporarily missing GitHub digest is retried');
   state = fakeState();
-  eq(state.releases['v2.4.5'].draft, true, 'partial release remains private draft');
-  eq(state.releases['v2.4.5'].assets.length, 1, 'only the first asset was uploaded');
+  eq(state.releases['v2.4.10'].draft, true, 'partial release remains private draft');
+  eq(state.releases['v2.4.10'].assets.length, 1, 'only the first asset was uploaded');
   const draftTagLookup = command(process.execPath, [resolve(project, 'tests/fixtures/fake-auto-gh.cjs'),
-    'api', 'repos/example/ChashmYar/releases/tags/v2.4.5'], {
+    'api', 'repos/example/ChashmYar/releases/tags/v2.4.10'], {
     env: { CHASHMYAR_FAKE_AUTO_GH_STATE: stateFile }, allowFailure: true,
   });
   ok(draftTagLookup.status !== 0 && /HTTP 404/.test(draftTagLookup.stderr), 'fake models GitHub: REST by-tag does not return drafts');
   state = fakeState();
-  state.releases['duplicate-draft'] = { ...state.releases['v2.4.5'], id: 98765 };
+  state.releases['duplicate-draft'] = { ...state.releases['v2.4.10'], id: 98765 };
   const beforeDuplicate = mutationCount(state); saveState(state);
-  selectSource(d); prepareBuild(d, '2.4.5');
-  checkFailed(auto('publish', d, '2.4.5', true), 'duplicate releases claiming one tag are refused');
+  selectSource(d); prepareBuild(d, '2.4.10');
+  checkFailed(auto('publish', d, '2.4.10', true), 'duplicate releases claiming one tag are refused');
   state = fakeState(); eq(mutationCount(state), beforeDuplicate, 'ambiguous draft caused no upload or publish');
   delete state.releases['duplicate-draft']; saveState(state);
   const isDInstallerUpload = ca => ca[0] === 'api' && /uploads\.github\.com/.test(ca[1] || '')
-    && (ca[1] || '').includes('2.4.5_x64-setup.exe') && ca.includes('POST');
+    && /name=ChashmYar_2\.4\.10_x64-setup\.exe$/.test(ca[1] || '') && ca.includes('POST');
   const installerUploads = state.calls.filter(isDInstallerUpload).length;
-  selectSource(d); eq(plan(d).version, '2.4.5', 'partial upload resumes the same version');
-  prepareBuild(d, '2.4.5'); auto('publish', d, '2.4.5');
+  selectSource(d); eq(plan(d).version, '2.4.10', 'partial upload resumes the same version');
+  prepareBuild(d, '2.4.10'); auto('publish', d, '2.4.10');
   state = fakeState();
-  eq(state.releases['v2.4.5'].draft, false, 'completed draft becomes public automatically');
+  eq(state.releases['v2.4.10'].draft, false, 'completed draft becomes public automatically');
   eq(state.calls.filter(isDInstallerUpload).length, installerUploads, 'matching asset was not uploaded again');
 
   // A mismatched draft asset is never replaced or published.
   const e = newMainCommit('E'); const fifth = plan(e);
-  eq(fifth.version, '2.4.6', 'fifth push increments patch');
-  prepareBuild(e, fifth.version); setFailure('upload:ChashmYar-2.4.6-portable.exe');
+  eq(fifth.version, '2.4.11', 'fifth push increments patch');
+  prepareBuild(e, fifth.version); setFailure('upload:ChashmYar-2.4.11-portable.exe');
   checkFailed(auto('publish', e, fifth.version, true), 'simulated partial upload fails');
-  state = fakeState(); state.releases['v2.4.6'].assets[0].digest = 'sha256:' + 'f'.repeat(64);
+  state = fakeState(); state.releases['v2.4.11'].assets[0].digest = 'sha256:' + 'f'.repeat(64);
   const beforeMismatch = mutationCount(state); saveState(state);
-  selectSource(e); prepareBuild(e, '2.4.6');
-  checkFailed(auto('publish', e, '2.4.6', true), 'mismatched draft asset is refused');
+  selectSource(e); prepareBuild(e, '2.4.11');
+  checkFailed(auto('publish', e, '2.4.11', true), 'mismatched draft asset is refused');
   state = fakeState(); eq(mutationCount(state), beforeMismatch, 'mismatched draft is neither overwritten nor published');
-  eq(state.releases['v2.4.6'].draft, true, 'mismatched draft remains unpublished');
-  state.releases['v2.4.6'].assets[0].digest = null; saveState(state);
-  selectSource(e); prepareBuild(e, '2.4.6');
-  const missingDigest = auto('publish', e, '2.4.6', true);
+  eq(state.releases['v2.4.11'].draft, true, 'mismatched draft remains unpublished');
+  state.releases['v2.4.11'].assets[0].digest = null; saveState(state);
+  selectSource(e); prepareBuild(e, '2.4.11');
+  const missingDigest = auto('publish', e, '2.4.11', true);
   ok(missingDigest.status !== 0 && /did not provide all asset SHA-256 digests/.test(missingDigest.stderr),
     'a permanently absent digest times out without publishing');
   state = fakeState(); eq(mutationCount(state), beforeMismatch, 'missing digest caused no upload or publish');
-  state.releases['v2.4.6'].assets[0].digest = actualDigest(state.releases['v2.4.6'].assets[0]); saveState(state);
-  selectSource(e); prepareBuild(e, '2.4.6'); setFailure('publish');
-  checkFailed(auto('publish', e, '2.4.6', true), 'failed final PATCH leaves a verified draft');
+  state.releases['v2.4.11'].assets[0].digest = actualDigest(state.releases['v2.4.11'].assets[0]); saveState(state);
+  selectSource(e); prepareBuild(e, '2.4.11'); setFailure('publish');
+  checkFailed(auto('publish', e, '2.4.11', true), 'failed final PATCH leaves a verified draft');
   state = fakeState();
-  eq(state.releases['v2.4.6'].assets.length, 5, 'all verified assets remain after publish failure');
-  eq(state.releases['v2.4.6'].draft, true, 'failed PATCH did not publish the draft');
+  eq(state.releases['v2.4.11'].assets.length, 8, 'all verified assets remain after publish failure');
+  eq(state.releases['v2.4.11'].draft, true, 'failed PATCH did not publish the draft');
   const beforeRetryUploads = state.calls.filter(ca => ca[0] === 'api' && /uploads\.github\.com/.test(ca[1] || '')).length;
-  selectSource(e); prepareBuild(e, '2.4.6'); auto('publish', e, '2.4.6');
+  // Even if GitHub keeps returning a stale Latest after PATCH, it may have
+  // published already. Report failure clearly, then allow a read-only retry.
+  state.staleLatestReads = 10; state.staleLatestTag = 'v2.4.10'; saveState(state);
+  selectSource(e); prepareBuild(e, '2.4.11');
+  const staleLatest = auto('publish', e, '2.4.11', true);
+  checkFailed(staleLatest, 'an unconfirmed Latest endpoint fails rather than claiming success');
+  ok(/may already be public/.test(staleLatest.stderr), 'failure explains that publication may have happened');
   state = fakeState();
-  ok(state.releases['v2.4.6']?.draft === false, 'matching draft can be completed once restored');
+  ok(state.releases['v2.4.11']?.draft === false, 'failed Latest confirmation does not pretend the release is still a draft');
+  const beforeLatestRetry = mutationCount(state);
+  selectSource(e); prepareBuild(e, '2.4.11'); auto('publish', e, '2.4.11');
+  state = fakeState();
+  eq(mutationCount(state), beforeLatestRetry, 'rechecking a now-visible Latest does not mutate the public release');
   eq(state.calls.filter(ca => ca[0] === 'api' && /uploads\.github\.com/.test(ca[1] || '')).length,
     beforeRetryUploads, 'verified assets are not uploaded twice after a failed final PATCH');
 
-  git('tag', '-a', 'v2.4.9', e, '-m', 'manual external tag');
-  git('push', 'origin', 'refs/tags/v2.4.9:refs/tags/v2.4.9');
+  git('tag', '-a', 'v2.4.14', e, '-m', 'manual external tag');
+  git('push', 'origin', 'refs/tags/v2.4.14:refs/tags/v2.4.14');
   const f = newMainCommit('F');
-  eq(plan(f).version, '2.4.10', 'all stable tags participate in numeric version allocation');
-  prepareBuild(f, '2.4.10');
+  eq(plan(f).version, '2.4.15', 'all stable tags participate in numeric version allocation');
+  prepareBuild(f, '2.4.15');
   const metaPath = join(repo, 'release/auto-release.json');
   const correctMeta = readFileSync(metaPath, 'utf8');
   const badMeta = JSON.parse(correctMeta); badMeta.tree = '0'.repeat(40);
   writeFileSync(metaPath, JSON.stringify(badMeta));
-  checkFailed(auto('publish', f, '2.4.10', true), 'mismatched build tree cannot be tagged or published');
-  ok(!git('ls-remote', '--tags', '--refs', 'origin', 'refs/tags/v2.4.10'), 'mismatched tree did not push a tag');
+  checkFailed(auto('publish', f, '2.4.15', true), 'mismatched build tree cannot be tagged or published');
+  ok(!git('ls-remote', '--tags', '--refs', 'origin', 'refs/tags/v2.4.15'), 'mismatched tree did not push a tag');
   writeFileSync(metaPath, correctMeta);
   git('reset', '--mixed', 'HEAD');
   // A competing manual tag appearing after allocation is never overwritten.
-  git('tag', '-a', 'v2.4.10', f, '-m', 'competing external tag');
-  git('push', 'origin', 'refs/tags/v2.4.10:refs/tags/v2.4.10');
-  checkFailed(auto('publish', f, '2.4.10', true), 'a changed version allocation fails safely');
-  ok(!fakeState().releases['v2.4.10'], 'tag collision created no release');
+  git('tag', '-a', 'v2.4.15', f, '-m', 'competing external tag');
+  git('push', 'origin', 'refs/tags/v2.4.15:refs/tags/v2.4.15');
+  checkFailed(auto('publish', f, '2.4.15', true), 'a changed version allocation fails safely');
+  ok(!fakeState().releases['v2.4.15'], 'tag collision created no release');
   git('reset', '--hard', f);
-  git('tag', '-a', 'v2.4.11', f, '-m', 'ChashmYar automatic release\n\ninvalid metadata');
+  git('tag', '-a', 'v2.4.16', f, '-m', 'ChashmYar automatic release\n\ninvalid metadata');
   checkFailed(auto('plan', f, undefined, true), 'a malformed automatic tag fails closed');
-  git('tag', '-d', 'v2.4.11');
+  git('tag', '-d', 'v2.4.16');
+
+  // A competing writer can create a higher tag after the publish job checks
+  // out, while it uploads the draft. Refreshing tags must catch this rather
+  // than publish the older version and move GitHub's Latest marker backwards.
+  const g = newMainCommit('G');
+  eq(plan(g).version, '2.4.16', 'next version is allocated before the remote race');
+  prepareBuild(g, '2.4.16');
+  state = fakeState();
+  state.injectRemoteTag = { bare, commit: g, tag: 'v2.4.17', onAsset: 'ChashmYar_2.4.16_x64-setup.exe' };
+  saveState(state);
+  const raced = auto('publish', g, '2.4.16', true);
+  checkFailed(raced, 'a higher remote tag created during uploads prevents publication');
+  ok(/stale after refreshing tags/.test(raced.stderr), 'the refreshed tag history explains the refusal');
+  state = fakeState();
+  eq(state.releases['v2.4.16'].draft, true, 'raced release remains a draft');
+  eq(state.latestTag, 'v2.4.11', 'raced release does not displace the previous Latest');
+  selectSource(g);
   git('checkout', '-b', 'unpublished-branch');
   appendFileSync(join(repo, 'app.txt'), 'not on main\n'); git('add', 'app.txt'); git('commit', '-m', 'Not pushed to main');
   const unpushed = git('rev-parse', 'HEAD');

@@ -39,7 +39,9 @@ try {
     npm run licenses:generate
     if ($LASTEXITCODE -ne 0) { throw "notice generation failed" }
 
-    Write-Host "[6/6] آماده‌سازی فایل‌های انتشار و هش‌ها..." -ForegroundColor Yellow
+    Write-Host "[6/6] امضا و آماده‌سازی فایل‌های انتشار و هش‌ها..." -ForegroundColor Yellow
+    npm run release:sign
+    if ($LASTEXITCODE -ne 0) { throw "updater signing failed" }
     npm run release:stage
     if ($LASTEXITCODE -ne 0) { throw "release staging failed" }
     Write-Host "آماده است: release\windows و release\staging" -ForegroundColor Green

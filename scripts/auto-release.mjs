@@ -2,8 +2,8 @@
 /**
  * Automatic patch releases from a pushed main commit.
  *
- * plan    - choose a unique patch using the full tag history, or skip stale work
- * stamp        - stage only the five version files and record the exact Git tree
+ * plan         - use an unreleased baseline or choose a unique next patch
+ * stamp        - stage only verified version changes and record the exact Git tree
  * verify-build - ensure the source still matches that tree after building
  * publish      - verify the build, tag a version-only commit and publish safely
  *
@@ -15,11 +15,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync,
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-
-const VERSION_FILES = [
-  'package.json', 'package-lock.json', 'src-tauri/tauri.conf.json',
-  'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock',
-].sort();
+import { VERSION_FILES, versionedContents } from './version.mjs';
 const META = join('release', 'auto-release.json');
 const HEADER = 'ChashmYar automatic release';
 const SHA = /^[0-9a-f]{40}$/;
@@ -133,8 +129,14 @@ function planRelease(source) {
     }
     return { skip: false, reason: 'resume-existing-tag', source, version: found.version, tag: found.tag, tree: found.tree };
   }
-  let latest = versionAt(source);
-  for (const t of tags) if (compareVersions(t.version, latest) > 0) latest = t.version;
+  const baseline = versionAt(source);
+  const latest = tags.at(-1)?.version;
+  // A newly advanced baseline is itself the first release. Once that version
+  // exists, allocate the next patch above the greatest stable tag. Never reuse
+  // any tag, including manually created tags from other sources.
+  if (latest === undefined || compareVersions(baseline, latest) > 0) {
+    return { skip: false, reason: 'new-baseline', source, version: baseline, tag: `v${baseline}` };
+  }
   const [major, minor, patch] = parseVersion(latest);
   if (patch >= 65535) throw new Error('Patch version is 65535; choose a new major/minor baseline before releasing');
   const version = `${major}.${minor}.${patch + 1}`;
@@ -147,7 +149,7 @@ function writeOutputs(values) {
   if (lines.some(s => /[\r\n]/.test(s))) throw new Error('Invalid output');
   appendFileSync(process.env.GITHUB_OUTPUT, lines.join('\n') + '\n');
 }
-function samePaths(a, b) { return JSON.stringify([...a].sort()) === JSON.stringify([...b].sort()); }
+function onlyVersionFiles(paths) { return paths.every(path => VERSION_FILES.includes(path)); }
 function requireVersionCheck(tag) {
   run(process.execPath, ['scripts/version.mjs', 'check', '--tag', tag]);
 }
@@ -157,12 +159,24 @@ function stageVersionTree(source, version) {
   const staged = gitLines('diff', '--cached', '--name-only');
   const unstaged = gitLines('diff', '--name-only');
   const untracked = gitLines('ls-files', '--others', '--exclude-standard');
-  if (staged.length || untracked.length || !samePaths(unstaged, VERSION_FILES)) {
-    throw new Error(`Expected only the five modified version files; staged=${staged.join(',')} unstaged=${unstaged.join(',')} untracked=${untracked.join(',')}`);
+  if (staged.length || untracked.length || !onlyVersionFiles(unstaged)) {
+    throw new Error(`Expected only version-file changes; staged=${staged.join(',')} unstaged=${unstaged.join(',')} untracked=${untracked.join(',')}`);
   }
+  // Check full contents, not just filenames: otherwise an unrelated malicious
+  // or accidental change inside a manifest could be smuggled into a release.
+  // Compare Git blobs, so Windows CRLF checkouts and Unix LF agree after add.
+  const original = Object.fromEntries(VERSION_FILES.map(path => [path, run('git', ['show', `${source}:${path}`]).stdout]));
+  const expected = versionedContents(original, version);
   git('add', '--', ...VERSION_FILES);
-  if (!samePaths(gitLines('diff', '--cached', '--name-only'), VERSION_FILES) || gitLines('diff', '--name-only').length) {
+  if (!onlyVersionFiles(gitLines('diff', '--cached', '--name-only')) || gitLines('diff', '--name-only').length) {
     throw new Error('Version staging included unexpected changes');
+  }
+  for (const path of VERSION_FILES) {
+    const actual = run('git', ['show', `:${path}`]).stdout;
+    if (actual !== expected[path]) throw new Error(`Non-version content changed in ${path}`);
+    const originalMode = run('git', ['ls-tree', source, '--', path]).stdout.match(/^([0-7]{6}) blob [0-9a-f]{40}\t/);
+    const stagedMode = run('git', ['ls-files', '--stage', '--', path]).stdout.match(/^([0-7]{6}) [0-9a-f]{40} 0\t/);
+    if (!originalMode || !stagedMode || originalMode[1] !== stagedMode[1]) throw new Error(`File mode changed in ${path}`);
   }
   const tree = git('write-tree');
   if (!SHA.test(tree)) throw new Error('Invalid Git tree identifier');
@@ -186,7 +200,7 @@ function verifyBuild(source, version) {
   requireVersionCheck(`v${version}`);
   if (metadata.schema !== 1 || metadata.source !== source || metadata.version !== version
       || metadata.tag !== `v${version}` || !SHA.test(metadata.tree || '')
-      || !samePaths(gitLines('diff', '--cached', '--name-only'), VERSION_FILES)
+      || !onlyVersionFiles(gitLines('diff', '--cached', '--name-only'))
       || gitLines('diff', '--name-only').length || gitLines('ls-files', '--others', '--exclude-standard').length
       || git('write-tree') !== metadata.tree) {
     throw new Error('The source or staged build tree changed during the build');
@@ -197,7 +211,8 @@ function fileSha(path) { return createHash('sha256').update(readFileSync(path)).
 function expectedAssets(version) {
   return [
     `ChashmYar_${version}_x64-setup.exe`, `ChashmYar-${version}-portable.exe`,
-    'LICENSE', 'THIRD_PARTY_NOTICES.txt', 'SHA256SUMS.txt',
+    `ChashmYar_${version}_x64-setup.exe.sig`, `ChashmYar-${version}-portable.exe.sig`,
+    'latest.json', 'LICENSE', 'THIRD_PARTY_NOTICES.txt', 'SHA256SUMS.txt',
   ];
 }
 function localAssets(version) {
@@ -255,7 +270,7 @@ function assetMap(release, names, { local, allowMissing = false, allowPending = 
     }
     result.set(asset.name, asset);
   }
-  if (!allowMissing && result.size !== names.length) throw new Error('Release does not contain all five verified assets');
+  if (!allowMissing && result.size !== names.length) throw new Error(`Release does not contain all ${names.length} verified assets`);
   return result;
 }
 // GitHub may return a null digest briefly after accepting an upload. Wait only
@@ -298,6 +313,21 @@ function verifyRemoteTag(tag) {
   const lines = gitLines('ls-remote', '--tags', '--refs', 'origin', `refs/tags/${tag}`);
   if (lines.length !== 1 || lines[0].split(/\s+/)[0] !== expected) throw new Error(`Remote tag ${tag} is missing or changed`);
 }
+function confirmLatestRelease(repo, tag, releaseId) {
+  // GitHub may take a moment to update the endpoint. This is read-only and
+  // deliberately never forces Latest back if a competing writer moved it.
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const result = gh(['api', `repos/${repo}/releases/latest`], true);
+    if (result.status === 0) {
+      try {
+        const latest = JSON.parse(result.stdout);
+        if (latest.id === releaseId && latest.tag_name === tag && latest.draft === false && latest.prerelease === false) return;
+      } catch { /* Retry a malformed or incomplete response. */ }
+    }
+    if (attempt < 9) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000);
+  }
+  throw new Error(`${tag} may already be public, but GitHub Latest could not be confirmed; inspect Releases and the updater endpoint before retrying`);
+}
 function publish(source, version) {
   const tag = `v${version}`, repo = repoEnv();
   const metadata = JSON.parse(readFileSync(META, 'utf8'));
@@ -317,7 +347,9 @@ function publish(source, version) {
     // Never update main or force a tag. A detached, version-only commit makes
     // GitHub's source archive byte-identical to the tree that was built.
     const config = ['-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com'];
-    git(...config, '-c', 'commit.gpgsign=false', 'commit', '-m', `chore(release): ${tag}`, '-m', `Source-Commit: ${source}`);
+    // The first release may already have the allocated version in its source.
+    // An empty child commit still records the source/tree identity for retries.
+    git(...config, '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', `chore(release): ${tag}`, '-m', `Source-Commit: ${source}`);
     const message = `${HEADER}\n\nSource-Commit: ${source}\nTree: ${tree}`;
     git(...config, '-c', 'tag.gpgSign=false', 'tag', '-a', tag, '-m', message);
     git('push', 'origin', `refs/tags/${tag}:refs/tags/${tag}`); // never --force
@@ -335,14 +367,15 @@ function publish(source, version) {
     validateIdentity(release, tag, expectedMarker);
     if (!release.draft) {
       verifyPublishedManifest(repo, tag, release, names);
-      console.log(`✓ ${tag} is already public and its existing assets are intact; nothing was overwritten.`);
+      confirmLatestRelease(repo, tag, release.id);
+      console.log(`✓ ${tag} is already public, Latest and internally consistent; nothing was overwritten.`);
       return;
     }
   } else {
     const notes = [expectedMarker, '', `Automatically built from main commit ${source}.`,
       'Windows x64 installer and portable; Microsoft Edge WebView2 Runtime is required.',
-      'These binaries are unsigned and may trigger SmartScreen. Verify SHA256SUMS.txt.',
-      'Automated tests do not replace testing on an actual Windows system.'].join('\n');
+      'Updates carry Tauri/Minisign signatures; the EXEs are not Authenticode-signed and may trigger SmartScreen.',
+      'Verify SHA256SUMS.txt. Automated tests do not replace testing on an actual Windows system.'].join('\n');
     // POST returns the new ID immediately, even if the releases listing is
     // eventually consistent. The remote tag was independently verified above.
     release = JSON.parse(gh(['api', `repos/${repo}/releases`, '--method', 'POST',
@@ -379,15 +412,28 @@ function publish(source, version) {
   validateIdentity(release, tag, expectedMarker);
   if (!release.draft) throw new Error('Release was published externally before verification finished');
   assetMap(release, names, { local });
-  // Publish the precise ID automatically after the five uploaded hashes match.
-  // Supplying tag_name prevents GitHub's edit API from clearing the tag.
+  // Re-fetch at the publication boundary: a manual release or force push may
+  // have happened since checkout/build. A newer tag or divergent main must
+  // not be displaced as Latest. External writers can still race this check;
+  // protect tags/releases and serialize manual publication operationally.
+  git('fetch', '--tags', 'origin');
+  const finalPlan = planRelease(source);
+  if (finalPlan.skip || finalPlan.tag !== tag || finalPlan.reason !== 'resume-existing-tag') {
+    throw new Error(`Publication is stale after refreshing tags: ${finalPlan.reason}`);
+  }
+  verifyRemoteTag(tag);
+  // Publish the precise ID only after all uploaded hashes match. Explicitly
+  // set the GitHub Latest marker: the updater uses /releases/latest. Supplying
+  // tag_name prevents GitHub's edit API from clearing the existing tag.
   gh(['api', `repos/${repo}/releases/${releaseId}`, '--method', 'PATCH',
-    '--raw-field', `tag_name=${tag}`, '--field', 'draft=false', '--field', 'prerelease=false']);
+    '--raw-field', `tag_name=${tag}`, '--raw-field', 'make_latest=true',
+    '--field', 'draft=false', '--field', 'prerelease=false']);
   release = getReleaseById(repo, releaseId);
   validateIdentity(release, tag, expectedMarker);
   if (release.draft) throw new Error('GitHub did not publish the release');
   assetMap(release, names, { local });
-  console.log(`✓ Published ${tag} with five verified assets: ${release.html_url || ''}`);
+  confirmLatestRelease(repo, tag, releaseId);
+  console.log(`✓ Published ${tag} as Latest with ${names.length} verified assets: ${release.html_url || ''}`);
 }
 
 try {

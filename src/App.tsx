@@ -8,6 +8,7 @@ import MicroBreakToast from "./windows/MicroBreakToast";
 import SnoozePopupWindow from "./windows/SnoozePopupWindow";
 import BreakLockWindow from "./windows/BreakLockWindow";
 import DimmerOverlayWindow from "./windows/DimmerOverlayWindow";
+import UpdateNotice from "./windows/UpdateNotice";
 
 const ALLOWED = new Set([
   "main",
@@ -16,6 +17,7 @@ const ALLOWED = new Set([
   "snooze-alert",
   "break-lock",
   "dimmer-overlay",
+  "update-alert",
 ]);
 
 /**
@@ -70,6 +72,8 @@ export default function App() {
         return <BreakLockWindow />;
       case "dimmer-overlay":
         return <DimmerOverlayWindow />;
+      case "update-alert":
+        return <UpdateNotice />;
       case "main":
       default:
         return <SettingsWindow />;

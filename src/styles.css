@@ -851,3 +851,39 @@ button, input, select, textarea, kbd, svg text, .font-mono {
 .snooze-choice-plus { display: grid; width: 21px; height: 21px; place-items: center; border-radius: 7px; background: var(--accent); color: #fff; }
 .snooze-choice-number { font-size: 17px; font-weight: 750; }
 .snooze-choice-label { font-size: 11px; font-weight: 650; }
+
+/* Signed update status, confirmation and passive portable-friendly notice. */
+.update-status-panel {
+  display: flex; align-items: flex-start; gap: 12px; padding: 14px;
+  color: var(--fg); background: var(--panel-soft); border: 1px solid var(--line);
+  border-radius: 16px; font-size: 12px; line-height: 1.8;
+}
+.update-status-icon {
+  display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto;
+  border-radius: 13px; color: var(--accent); background: var(--accent-soft);
+}
+.update-progress { height: 6px; flex: 1; overflow: hidden; border-radius: 999px; background: var(--track); }
+.update-progress > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.update-action-primary, .update-action-secondary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 38px; padding: 8px 13px; border-radius: 12px; font-size: 12px; font-weight: 700;
+  transition: opacity .15s, border-color .15s, transform .15s;
+}
+.update-action-primary { color: white; background: #047857; border: 1px solid #047857; }
+.update-action-secondary { color: var(--fg-2); background: var(--panel-soft); border: 1px solid var(--line-strong); }
+.update-action-primary:not(:disabled):hover, .update-action-secondary:hover { transform: translateY(-1px); }
+.update-action-primary:disabled { opacity: .5; cursor: not-allowed; }
+.update-action-primary:focus-visible, .update-action-secondary:focus-visible, .update-notice-link:focus-visible,
+.update-notice-close:focus-visible { outline: 3px solid #38bdf8; outline-offset: 2px; }
+.update-dialog-backdrop {
+  position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 20px;
+  background: rgba(2, 6, 23, .55); backdrop-filter: blur(3px);
+}
+.update-dialog {
+  width: min(460px, 100%); padding: 24px; border-radius: 22px;
+  color: var(--fg); background: var(--panel-solid); border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-panel);
+}
+.update-notice { display: flex; align-items: flex-start; gap: 12px; width: 100%; height: 130px; padding: 14px; color: var(--fg); background: var(--panel-solid); box-shadow: none; }
+.update-notice-link { margin-top: 5px; color: var(--accent); font-size: 11px; font-weight: 750; }
+.update-notice-close { display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 auto; color: var(--muted); border-radius: 9px; background: var(--panel-soft); border: 1px solid var(--line); }

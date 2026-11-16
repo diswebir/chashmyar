@@ -44,8 +44,11 @@ import {
 } from "../components/ui";
 import { formatClock, formatMinutes, nowClock, toLocalDigits, toPersianPercent } from "../lib/persian";
 import { EYE_PROFILES, type EyeProfileId, type Language, type Theme } from "../types";
-import { call } from "../lib/bridge";
+import { call, subscribeOpenUpdates } from "../lib/bridge";
 import { t } from "../lib/i18n";
+import { useUpdateStatus } from "../lib/updates";
+import UpdateCard from "../components/UpdateCard";
+import ColorVisionCard from "../components/ColorVisionCard";
 import AnalyticsTab from "../components/AnalyticsTab";
 import { EyeExerciseCanvas, STRETCHES, StretchIllustration } from "../components/exercises";
 import brandMark from "../../src-tauri/icons/128x128.png";
@@ -102,7 +105,17 @@ export default function SettingsWindow() {
 
   const [tab, setTab] = useState<TabId>("dashboard");
   const [newEntry, setNewEntry] = useState("");
+  const { status: updateStatus, check: checkUpdates } = useUpdateStatus();
   const { settings, timer, eye } = snapshot;
+
+  useEffect(() => {
+    let disposed = false;
+    let off: (() => void) | undefined;
+    void subscribeOpenUpdates(() => setTab("about")).then((unlisten) => {
+      if (disposed) unlisten(); else off = unlisten;
+    });
+    return () => { disposed = true; off?.(); };
+  }, []);
 
   const phaseTitle = useMemo(() => {
     switch (timer.phase) {
@@ -146,6 +159,11 @@ export default function SettingsWindow() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {updateStatus.phase === "ready" && (
+            <button type="button" className="update-action-primary" data-testid="update-header" onClick={() => setTab("about")}>
+              <ArrowUpToLine size={14} /> {t("نسخه جدید آماده است")}
+            </button>
+          )}
           {/* theme */}
           <Segmented<Theme>
             size="sm"
@@ -574,6 +592,8 @@ export default function SettingsWindow() {
                     </div>
                   </GlassCard>
 
+                  <ColorVisionCard />
+
                   <GlassCard>
                     <SectionHeading
                       title={t("زمان‌بندی خودکار شب")}
@@ -639,7 +659,7 @@ export default function SettingsWindow() {
                   <GlassCard>
                     <SectionHeading
                       title={t("رنگ‌ایمن (Color-Safe)")}
-                      subtitle={t("وقتی این برنامه‌ها فعال می‌شوند، فیلتر در ۲ ثانیه به ۶۵۰۰K محو می‌شود")}
+                      subtitle={t("در برنامه‌های مشخص، گرما محو و کمک دید رنگی موقتاً متوقف می‌شود")}
                       icon={<Palette size={16} />}
                       action={
                         <button
@@ -1306,6 +1326,7 @@ export default function SettingsWindow() {
               {/* ============================== about =========================== */}
               {tab === "about" && (
                 <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+                  <UpdateCard status={updateStatus} check={checkUpdates} />
                   <GlassCard>
                     <SectionHeading
                       title={t("درباره چشم‌یار")}

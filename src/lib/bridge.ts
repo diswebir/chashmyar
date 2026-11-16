@@ -31,6 +31,19 @@ export function windowLabel(): string {
 
 export const SNAPSHOT_EVENT = "app://snapshot";
 export const PENALTY_EVENT = "break-penalty-applied";
+export const UPDATE_EVENT = "app://update-status";
+
+export type UpdatePhase = "idle" | "checking" | "downloading" | "upToDate" | "ready" | "installing" | "error" | "unconfigured" | "unsupported" | "restartRequired";
+export interface UpdateStatus {
+  revision: number;
+  phase: UpdatePhase;
+  version: string | null;
+  kind: "installed" | "portable";
+  downloaded: number;
+  total: number | null;
+  error: string | null;
+  buildMarker: string;
+}
 
 type Listener = (snapshot: AppSnapshot) => void;
 
@@ -75,7 +88,7 @@ function mockInitial(): AppSnapshot {
           system: { ...DEFAULT_SETTINGS.system, ...parsed.settings?.system },
         },
         timer: { ...parsed.timer, running: false, paused: false, idlePaused: false },
-        eye: parsed.eye,
+        eye: { ...parsed.eye, colorVisionStatus: parsed.eye?.colorVisionStatus ?? "off" },
       };
     }
   } catch {
@@ -108,6 +121,7 @@ function mockInitial(): AppSnapshot {
     eye: {
       gammaSupported: true,
       gammaApplied: true,
+      colorVisionStatus: "off",
       // A browser preview has no native display-affinity control.
       captureExcluded: false,
       effectiveKelvin: DEFAULT_SETTINGS.eye.kelvin,
@@ -121,6 +135,42 @@ function mockInitial(): AppSnapshot {
 }
 
 let mock: AppSnapshot = mockInitial();
+// Browser tests may request a simulated status, but never change real display
+// colours. The card explicitly identifies the browser-only preview.
+const mockVisionScenario = new URLSearchParams(window.location.search).get("cvd");
+function refreshMockVision() {
+  const eye = mock.settings.eye;
+  if (!["off", "protanopia", "deuteranopia", "tritanopia"].includes(eye.colorVisionProfile)) eye.colorVisionProfile = "off";
+  // Match native fail-closed handling of malformed present values. Old mock
+  // snapshots without the field already inherited the 60% default above.
+  eye.colorVisionStrength = typeof eye.colorVisionStrength === "number" && Number.isSafeInteger(eye.colorVisionStrength)
+    ? Math.min(100, Math.max(0, eye.colorVisionStrength)) : 0;
+  if (eye.colorVisionProfile === "off" || eye.colorVisionStrength === 0) mock.eye.colorVisionStatus = "off";
+  else if (eye.colorSafeEnabled && mock.eye.whitelisted) mock.eye.colorVisionStatus = "paused";
+  else if (mockVisionScenario === "conflict" || mockVisionScenario === "error" || mockVisionScenario === "restoreError" || mockVisionScenario === "active") {
+    mock.eye.colorVisionStatus = mockVisionScenario;
+  } else mock.eye.colorVisionStatus = "unsupported";
+}
+refreshMockVision();
+// Browser-only simulation; native builds use Rust's signed updater state.
+const updateScenario = new URLSearchParams(window.location.search).get("update");
+const updateKind = new URLSearchParams(window.location.search).get("kind") === "portable" ? "portable" : "installed";
+const scenarioPhase: UpdatePhase = updateScenario === "ready" || updateScenario === "portable-error" || updateScenario === "settings-error" || updateScenario === "installer-error" ? "ready"
+  : updateScenario === "download" ? "downloading"
+  : updateScenario === "error" ? "error"
+  : updateScenario === "unconfigured" ? "unconfigured" : "idle";
+let mockUpdate: UpdateStatus = {
+  revision: 0, phase: scenarioPhase,
+  version: ["ready", "downloading"].includes(scenarioPhase) ? "2.4.9" : null,
+  kind: updateKind, downloaded: scenarioPhase === "downloading" ? 50 : 100,
+  total: 100, error: scenarioPhase === "error" ? "check" : null,
+  buildMarker: "browser-mock",
+};
+const mockUpdateListeners = new Set<(status: UpdateStatus) => void>();
+function emitMockUpdate() {
+  mockUpdate = { ...mockUpdate, revision: mockUpdate.revision + 1 };
+  mockUpdateListeners.forEach((fn) => fn(structuredClone(mockUpdate)));
+}
 const mockListeners = new Set<Listener>();
 const penaltyListeners = new Set<(p: PenaltyPayload) => void>();
 let mockTicker: number | null = null;
@@ -394,11 +444,39 @@ function mockApplyPatch(patch: DeepPartial<Settings>) {
   } else {
     mock.eye = { ...mock.eye, gammaApplied: false, effectiveKelvin: 6500, targetKelvin: 6500, effectiveBrightness: 100 };
   }
+  refreshMockVision();
 }
 
 async function mockCommand<T>(name: string, args?: Record<string, unknown>): Promise<T> {
   const t = mock.timer;
   switch (name) {
+    case "update_status":
+      return structuredClone(mockUpdate) as T;
+    case "check_for_updates":
+      if (mockUpdate.phase !== "ready" && mockUpdate.phase !== "unconfigured") {
+        mockUpdate = { ...mockUpdate, phase: updateScenario === "error" ? "error" : "upToDate", error: updateScenario === "error" ? "check" : null };
+        emitMockUpdate();
+      }
+      return structuredClone(mockUpdate) as T;
+    case "install_ready_update":
+      if (mockUpdate.phase !== "ready") throw new Error("not_ready");
+      if (updateScenario === "portable-error" || updateScenario === "settings-error" || updateScenario === "installer-error") {
+        const code = updateScenario === "portable-error" ? "portable_install" : updateScenario === "settings-error" ? "settings_save" : "installer_prepare";
+        mockUpdate = { ...mockUpdate, error: code };
+        emitMockUpdate();
+        throw new Error(code);
+      }
+      mockUpdate = { ...mockUpdate, phase: "installing" };
+      emitMockUpdate();
+      return {} as T;
+    case "update_open_details":
+      window.dispatchEvent(new Event("chashmyar-mock-open-updates"));
+      return {} as T;
+    case "update_dismiss_notice":
+      return {} as T;
+    case "open_releases_page":
+      window.open("https://github.com/diswebir/chashmyar/releases/latest", "_blank", "noopener,noreferrer");
+      return {} as T;
     case "get_snapshot":
       return structuredClone(mock) as T;
     case "patch_settings": {
@@ -436,6 +514,10 @@ async function mockCommand<T>(name: string, args?: Record<string, unknown>): Pro
       emitMock();
       return structuredClone(mock) as T;
     }
+    case "retry_color_vision":
+      refreshMockVision();
+      emitMock();
+      return structuredClone(mock) as T;
     case "set_color_safe":
       mockApplyPatch({ eye: { colorSafeEnabled: args?.enabled as boolean } });
       emitMock();
@@ -671,7 +753,7 @@ async function mockCommand<T>(name: string, args?: Record<string, unknown>): Pro
 // Keep mutation order from a single webview even when users click or drag fast.
 // Reads can run concurrently, and backend snapshot revisions suppress old replies.
 let mutationQueue: Promise<void> = Promise.resolve();
-const READ_COMMANDS = new Set(["get_snapshot", "analytics_get", "analytics_today"]);
+const READ_COMMANDS = new Set(["get_snapshot", "analytics_get", "analytics_today", "update_status"]);
 export async function call<T = AppSnapshot>(name: string, args?: Record<string, unknown>): Promise<T> {
   const run = () => IS_TAURI ? invoke<T>(name, args) : mockCommand<T>(name, args);
   if (READ_COMMANDS.has(name)) return run();
@@ -682,6 +764,20 @@ export async function call<T = AppSnapshot>(name: string, args?: Record<string, 
 
 export async function getSnapshot(): Promise<AppSnapshot> {
   return call<AppSnapshot>("get_snapshot");
+}
+
+/** The Rust updater owns and verifies all downloaded bytes. */
+export async function subscribeUpdates(cb: (status: UpdateStatus) => void): Promise<UnlistenFn> {
+  if (IS_TAURI) return listen<UpdateStatus>(UPDATE_EVENT, (event) => cb(event.payload));
+  mockUpdateListeners.add(cb);
+  return () => { mockUpdateListeners.delete(cb); };
+}
+
+export async function subscribeOpenUpdates(cb: () => void): Promise<UnlistenFn> {
+  if (IS_TAURI) return listen("app://open-updates", () => cb());
+  const listener = () => cb();
+  window.addEventListener("chashmyar-mock-open-updates", listener);
+  return () => window.removeEventListener("chashmyar-mock-open-updates", listener);
 }
 
 /** Subscribes to authoritative state pushes from the Rust core. */

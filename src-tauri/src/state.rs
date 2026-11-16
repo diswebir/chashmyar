@@ -24,6 +24,26 @@ pub struct EyeSettings {
     pub color_safe_whitelist: Vec<String>,
     /// Length of the gamma lerp when the whitelist engages/releases (ms).
     pub transition_ms: u32,
+    /// Experimental full-screen recolouring; independent of warm-light presets.
+    /// Missing fields in older installations default to off. Invalid JSON for
+    /// this new field fails closed instead of discarding older preferences.
+    #[serde(deserialize_with = "read_color_vision_profile")]
+    pub color_vision_profile: String,
+    /// Recolouring strength, not a diagnosis or severity of vision deficiency.
+    #[serde(deserialize_with = "read_color_vision_strength")]
+    pub color_vision_strength: u32,
+}
+
+fn read_color_vision_profile<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    let value = serde_json::Value::deserialize(d)?;
+    Ok(value.as_str().unwrap_or("off").to_owned())
+}
+
+fn read_color_vision_strength<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    let value = serde_json::Value::deserialize(d)?;
+    // A malformed or negative saved strength must not unexpectedly turn on an
+    // effect. Missing fields use the normal 60% preference via struct default.
+    Ok(value.as_u64().map(|n| n.min(100) as u32).unwrap_or(0))
 }
 
 impl Default for EyeSettings {
@@ -47,7 +67,19 @@ impl Default for EyeSettings {
                 "Inspect".into(),
             ],
             transition_ms: 2000,
+            color_vision_profile: "off".into(),
+            color_vision_strength: 60,
         }
+    }
+}
+
+impl EyeSettings {
+    /// Preserve every other preference if a stored profile is unrecognized.
+    pub fn normalize_color_vision(&mut self) {
+        if !crate::color_vision::Profile::valid(&self.color_vision_profile) {
+            self.color_vision_profile = "off".into();
+        }
+        self.color_vision_strength = self.color_vision_strength.min(100);
     }
 }
 
@@ -296,6 +328,8 @@ impl Default for TimerState {
 pub struct EyeInfo {
     pub gamma_supported: bool,
     pub gamma_applied: bool,
+    /// Most recent Magnification API worker result, not proof of physical colour.
+    pub color_vision_status: &'static str,
     /// Windows accepted display-capture exclusion for the overlay. Some
     /// capture methods can still ignore it; never interpret this as a guarantee.
     pub capture_excluded: bool,
@@ -421,6 +455,7 @@ impl Runtime {
             eye: EyeInfo {
                 gamma_supported: self.gamma_supported,
                 gamma_applied: self.gamma_applied && self.settings.eye.enabled && !paused_by_whitelist,
+                color_vision_status: crate::color_filter::status().as_str(),
                 capture_excluded: crate::windows::capture_exclusion_active(),
                 effective_kelvin: crate::display::current_kelvin(),
                 target_kelvin: target,

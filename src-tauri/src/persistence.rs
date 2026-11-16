@@ -20,7 +20,8 @@ const KEY: &str = "settings";
 pub fn load(app: &AppHandle) -> Settings {
     if let Ok(store) = app.store(STORE_FILE) {
         if let Some(value) = store.get(KEY) {
-            if let Ok(settings) = serde_json::from_value::<Settings>(value) {
+            if let Ok(mut settings) = serde_json::from_value::<Settings>(value) {
+                settings.eye.normalize_color_vision();
                 return settings;
             }
         }
@@ -31,14 +32,20 @@ pub fn load(app: &AppHandle) -> Settings {
 /// Save the latest state under a single writer lock. Never call with the
 /// runtime mutex already held; native store I/O stays outside that mutex.
 pub fn save_current(app: &AppHandle, shared: &Shared) {
+    if let Err(err) = save_current_checked(app, shared) {
+        crate::diag::log(format!("settings save failed: {err}"));
+    }
+}
+
+/// The updater must not proceed when the most recent settings cannot be saved.
+/// As with any filesystem write, hardware failures still require a backup.
+pub fn save_current_checked(app: &AppHandle, shared: &Shared) -> Result<(), String> {
     let _writer = SAVE_LOCK.lock();
     let settings = shared.lock().settings.clone();
-    if let Ok(store) = app.store(STORE_FILE) {
-        if let Ok(value) = serde_json::to_value(settings) {
-            let _ = store.set(KEY, value);
-            let _ = store.save();
-        }
-    }
+    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let value = serde_json::to_value(settings).map_err(|e| e.to_string())?;
+    store.set(KEY, value);
+    store.save().map_err(|e| e.to_string())
 }
 
 /// Coalesce bursts of edits on a background worker rather than synchronously

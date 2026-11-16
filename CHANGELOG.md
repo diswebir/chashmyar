@@ -1,10 +1,19 @@
 # Changelog
 
-Changes to the application are recorded here. Version tags use stable semantic versions such as `v2.4.1`.
+Changes to the application are recorded here. Version headers describe source baselines; automatic release tags may differ when newer tags already exist.
 
-## Unreleased
+## 2.4.7 — source baseline (not yet published)
+
+### Added
+- Experimental opt-in full-screen deutan, protan and tritan colour-vision recolouring with adjustable strength, Persian/English controls, color-safe hand-off, saved preferences and best-effort conflict/restoration policy. This is an approximation, not a medical treatment or a guarantee of improved distinction. Browser/mocked and host tests do not validate Windows Magnification, HDR, physical display output or crash recovery; real-Windows testing remains necessary.
+- Signed GitHub updater for installed and portable builds: background check and verified download, passive notice and localized About controls; installation/restart requires explicit confirmation. Older versions without the embedded key require a manual first upgrade.
+- Release automation injects a maintainer-supplied public key, signs both Windows assets, verifies signatures and signed versions, and publishes the two signatures and updater manifest alongside the existing files. No production signing key is included.
 
 ### Fixed
+- Fixed automatic version allocation so an untagged baseline newer than all existing stable tags is released as-is: 2.4.7 follows v2.4.6 instead of being skipped. Equal/higher tags still advance safely; retries preserve their tag and an occupied patch 65535 fails closed.
+- Fixed stamping/publication when no version files change, and validate the complete contents and Git modes of version files rather than trusting filenames. Added offline tests for unchanged, partial and tampered files and Windows-style CRLF checkouts.
+- Re-fetch tags before publishing, explicitly mark the verified release as GitHub Latest and confirm the updater endpoint selects it. Tests cover delayed/stale Latest and a competing higher remote tag; external writers still require operational coordination.
+- Added preventative same-thread Z-order handling for the app's own warning, short-exercise and updater notifications so they remain below the active dimmer during show/reordering; removed redundant post-show topmost promotions. Native Windows visual/click testing is still required; the asynchronous fallback for other applications cannot guarantee a filtered first frame.
 - Restored readable contrast in the weekly chart's hover tooltip in the light theme: it now uses an opaque light surface with dark text. The dark-theme tooltip and chart data are unchanged; browser/mock regression checks cover both themes and languages.
 
 ### Branding and documentation

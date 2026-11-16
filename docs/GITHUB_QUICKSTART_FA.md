@@ -1,96 +1,63 @@
 # شروع سریع: فرستادن سورس به GitHub و ساخت خودکار
 
-[بازگشت به README](../README.md) · [راهنمای کامل انتشار و بازیابی](RELEASE_GUIDE_FA.md) · [English: CI and release](CI_AND_RELEASE.md)
+[بازگشت به README](../README.md) · [ثبت کلید به‌روزرسانی](UPDATER_SIGNING_FA.md) · [راهنمای انتشار و بازیابی](RELEASE_GUIDE_FA.md)
 
-این راهنما برای زمانی است که می‌خواهید **GitHub Actions برنامه را بسازد**، نه اینکه روی رایانهٔ خودتان فایل اجرایی بسازید. برای ارسال، Git یا GitHub Desktop کافی است؛ نصب محلی Node.js، Rust، Visual Studio و WebView2 لازم نیست.
+این بسته **سورس** است؛ فایل اجرایی جدید در آن نیست. ساخت برنامه روی GitHub Actions انجام می‌شود، نه روی رایانهٔ شما. برای انتقال می‌توانید از Git یا GitHub Desktop استفاده کنید؛ برای ساخت یک‌بارهٔ کلید امضا در رایانهٔ مورد اعتماد نیز Node.js و npx لازم است، ولی نیازی به Rust یا ساخت محلی برنامه نیست.
 
-> **هشدار انتشار:** در تنظیم فعلی هر push به `main` ساخت و در صورت موفقیت، انتشار خودکار Release را درخواست می‌کند. اگر مخزن Public باشد، Release منتشرشده عمومی است و تأیید انسانی جداگانه ندارد. قبل از push، سورس و تنظیمات را بازبینی کنید. نخستین اجرای واقعی GitHub و عملکرد روی ویندوز را باید خودتان بررسی کنید؛ وجود workflow به معنی موفقیت تضمین‌شده نیست.
+> هر push به `main` درخواست انتشار خودکار می‌دهد. اگر آزمون‌ها موفق شوند، Release عمومی بدون تأیید انسانی جداگانه منتشر می‌شود. پیش از push تغییرات را بازبینی کنید. اجرای واقعی GitHub و عملکرد برنامه روی ویندوز با این بسته هنوز تأیید نشده‌اند.
 
 ## ۱. استخراج کامل بسته
 
-ZIP سورس را در یک مسیر کوتاه، مثلاً `C:\src\chashmyar`، استخراج کنید. PowerShell را **در پوشه‌ای باز کنید که `package.json` در آن قرار دارد**، نه در پوشهٔ بالاتر یا داخل `src-tauri`.
+ZIP را در پوشه‌ای جدا از مخزن استخراج کنید. در ریشهٔ سورس باید `package.json`، پوشه‌های `src` و `src-tauri`، `.github/workflows`، `scripts`، `tests`، `docs`، فایل‌های lock و `assets/branding` وجود داشته باشند. پوشهٔ مخفی `.github`، `.gitignore` و `.gitattributes` را حذف نکنید. `node_modules`، `dist`، `target` و `release` جزو انتقال سورس نیستند؛ فایل‌های قدیمی را نیز با این بسته حذف نکنید.
 
-باید این موارد در ریشه باشند:
+## ۲. تنظیم مخزن و کلید، پیش از push
 
-```text
-.github/workflows/ci.yml            بررسی‌های مستقل CI
-.github/workflows/release.yml       ساخت و انتشار خودکار ویندوز
-assets/branding/                    تصویر تأییدشده و اطلاعات آیکن‌ها
-src/ ، src-tauri/src/               سورس برنامه
-src-tauri/icons/                    آیکن‌های جدید، از جمله ICO چنداندازه‌ای
-src-tauri/vendor/tao/               وابستگی محلی اصلاح‌شده و مجوز آن
-package.json ، package-lock.json    تعریف و قفل وابستگی‌های frontend
-src-tauri/Cargo.lock                قفل وابستگی‌های Rust
-scripts/ ، tests/ ، docs/           ابزارها، آزمون‌ها و مستندات
-```
+۱. این سورس برای مخزن موجود **`https://github.com/diswebir/chashmyar`** تنظیم شده است؛ updater همین آدرس را بدون توکن کاربر بررسی می‌کند، پس برای دریافت عمومی باید مخزن و Release عمومی باشند. مخزن موجود را clone کنید، تاریخچه و تگ‌ها را حفظ کنید و `git init` یا force-push نزنید. برای استفاده از نام مخزن دیگر، باید آدرس‌های ثابت updater و تست‌های مربوط نیز عمداً تغییر کنند.
+۲. در **Settings → Actions → General** اجرای Actions و actionهای استفاده‌شده را مجاز کنید. سیاست مخزن و ruleset تگ‌ها باید اجازهٔ ساخت تگ و Release توسط `github-actions[bot]` را بدهد؛ فقط job انتشار مجوز `contents: write` می‌خواهد و توکن شخصی در سورس لازم نیست.
+۳. طبق **[راهنمای کلید](UPDATER_SIGNING_FA.md)**، کلید خصوصی خودتان را خارج از مخزن بسازید یا کلید معتبر قبلی را بازیابی کنید. در **Settings → Secrets and variables → Actions** این مقادیر را ثبت کنید:
 
-`.github`، `.gitignore` و `.gitattributes` در بعضی فایل‌منیجرها مخفی‌اند؛ **آن‌ها را حذف نکنید**. پوشه‌های `node_modules`، `dist`، `src-tauri/target` و `release` در ZIP سورس لازم نیستند و در `.gitignore` نادیده گرفته می‌شوند. فایل اجرایی جدید داخل این بسته وجود ندارد؛ فایل‌های اجرایی قدیمی ۲.۴.۳ نیز نشان جدید را ندارند.
+| محل | نام |
+|---|---|
+| Repository secret | `TAURI_SIGNING_PRIVATE_KEY` — محتوای کلید خصوصی، نه مسیر آن |
+| Repository secret | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — رمز کلید، در صورت داشتن رمز |
+| Repository variable | `CHASHMYAR_UPDATER_PUBLIC_KEY` — محتوای فایل کلید عمومی |
 
-## ۲. ساخت مخزن خالی و تنظیم Actions
+کلید خصوصی و رمز را به مخزن یا چت نفرستید. کلید و رمز را امن پشتیبان بگیرید و کلید عمومی را بین انتشارها تغییر ندهید. اگر مقادیر درست نباشند، انتشار متوقف می‌شود.
 
-1. در [GitHub: New repository](https://github.com/new) یک مخزن جدید بسازید. برای دانلود عمومی **Public** انتخاب کنید؛ Release مخزن Private فقط برای افراد دارای دسترسی است.
-2. چون README و LICENSE در سورس هستند، هنگام ساخت مخزن خالی، گزینهٔ ساخت خودکار README، `.gitignore` و مجوز را انتخاب نکنید.
-3. در **Settings → Actions → General** بررسی کنید Actions و actionهای استفاده‌شده مجاز باشند. مرحلهٔ انتشار در workflow صریحاً `contents: write` درخواست می‌کند؛ سیاست مخزن/سازمان و ruleset تگ‌ها نباید ساخت تگ و Release توسط `github-actions[bot]` را منع کنند. نیازی به قرار دادن توکن شخصی یا گواهی در سورس نیست.
-4. محدودیت مصرف، دسترسی runner ویندوز و سیاست‌های حساب یا سازمان می‌توانند اجرای Actions را متوقف کنند؛ وضعیت و هزینه‌های احتمالی حساب خود را بررسی کنید.
+## ۳. کپی سورس و push به مخزن موجود
 
-## ۳. ثبت سورس و push با Git
-
-[Git for Windows](https://git-scm.com/downloads/win) را نصب کنید و در PowerShell ریشهٔ پروژه، در صورت نیاز نام و ایمیل commit خود را تنظیم کنید:
+با [Git for Windows](https://git-scm.com/downloads/win) در PowerShell یک clone جدید بسازید، یا مخزن قبلی خود را باز کنید. دستورهای نمونه برای clone جدید:
 
 ```powershell
-git config --global user.name "نام شما"
-git config --global user.email "ایمیل شما"
-git init -b main
-git add .
-git status --short
-```
-
-برای اطمینان از ثبت پوشهٔ مخفی، قفل‌ها و وابستگی محلی، دستور زیر باید مسیرهای نام‌برده را نمایش دهد:
-
-```powershell
-git ls-files -- .github/workflows/ci.yml .github/workflows/release.yml package-lock.json src-tauri/Cargo.lock src-tauri/vendor/tao/CHASHMYAR_PATCH.md src-tauri/icons/icon.ico
-```
-
-اگر مسیری نمایش داده نشد، قبل از ادامه ZIP و مسیر استخراج را بررسی کنید. در `git status` نباید توکن، گواهی، اطلاعات شخصی، `node_modules`، `dist`، `target` یا `release` ثبت شده باشند. سپس `OWNER` و `REPOSITORY` را با مشخصات واقعی مخزن خود جایگزین کنید:
-
-```powershell
-git commit -m "Prepare ChashmYar source"
-git remote add origin https://github.com/OWNER/REPOSITORY.git
-git push -u origin main
-```
-
-برای ورود از Git Credential Manager یا GitHub Desktop استفاده کنید؛ رمز و توکن را در URL، فایل یا workflow ننویسید. اگر از توکن شخصی برای انتقال فایل workflow استفاده می‌کنید، GitHub ممکن است مجوز مربوط به workflow را نیز بخواهد.
-
-**روش GitHub Desktop:** مخزن خالی را clone کنید، همهٔ محتویات سورس استخراج‌شده ــ از جمله موارد مخفی ــ را داخل آن کپی کنید، تغییرات را بازبینی و commit کنید، سپس branch `main` را push کنید. اگر مخزن از قبل تاریخچه دارد نیز ابتدا آن را clone و تغییرات را با تاریخچهٔ موجود ادغام کنید؛ این راهنما دستور force-push نمی‌دهد.
-
-## ۴. نتیجه را در GitHub ببینید
-
-1. وارد **Actions → Automatic Windows release** شوید و اجرای مربوط به commit خود را باز کنید.
-2. سه job را بررسی کنید: تخصیص نسخه، ساخت و آزمون ویندوز x64، و انتشار. گردش جداگانهٔ **CI** نیز اجرا می‌شود، اما گردش انتشار به نتیجهٔ آن گردش جداگانه وابسته نیست؛ کنترل‌های خودش را اجرا می‌کند.
-3. پس از موفقیت، صفحهٔ **Releases** را باز کنید. انتظار می‌رود پنج دارایی وجود داشته باشند: نصب‌کننده، پرتابل، `SHA256SUMS.txt`، `LICENSE` و `THIRD_PARTY_NOTICES.txt`. GitHub دو آرشیو Source code را جداگانه نمایش می‌دهد.
-4. برای نسخهٔ نمونهٔ ۲.۴.۴ پس از دانلود، هش‌ها را با فایل همان Release مقایسه کنید:
-
-```powershell
-Get-FileHash .\ChashmYar_2.4.4_x64-setup.exe -Algorithm SHA256
-Get-FileHash .\ChashmYar-2.4.4-portable.exe -Algorithm SHA256
-Get-Content .\SHA256SUMS.txt
-```
-
-شماره را با نسخهٔ واقعی جایگزین کنید. این مقایسه امضای ناشر نیست؛ خروجی پیش‌فرض بی‌امضا است و ممکن است SmartScreen هشدار دهد. نصب‌کننده و نسخهٔ پرتابل به WebView2 نیاز دارند. روی ویندوز واقعی طبق [چک‌لیست انتشار](RELEASE_GUIDE_FA.md) آزمایش کنید؛ ساخت runner به‌تنهایی عملکرد نصب، فوکوس، صدا و گاما را ثابت نمی‌کند.
-
-## ۵. شمارهٔ نسخه و دفعات بعد
-
-نسخهٔ پایهٔ این سورس `2.4.3` است. اگر تگ پایدار بالاتری وجود نداشته باشد، اولین push موفق معمولاً `v2.4.4` و push موفق بعدی معمولاً `v2.4.5` می‌سازد. `main` همچنان نسخهٔ پایه را نشان می‌دهد؛ سورسِ تگ و اجرایی‌ها با نسخهٔ تخصیص‌یافته هماهنگ می‌شوند. برای انتشار عادی تگ دستی نسازید و Patch را دستی بالا نبرید.
-
-برای تغییر بعدی، تغییرات را ابتدا آزمایش و بازبینی کنید، سپس:
-
-```powershell
+git clone https://github.com/diswebir/chashmyar.git
+cd chashmyar
 git checkout main
 git pull --ff-only origin main
+```
+
+اکنون محتویات ZIP استخراج‌شده را **داخل همین clone** کپی و فایل‌های سورس همنام را جایگزین کنید؛ `.git` موجود و تاریخچهٔ مخزن را تغییر ندهید. فایل‌های اجرایی و پوشه‌های دادهٔ محلی را در مخزن اضافه نکنید. سپس در ریشهٔ clone:
+
+```powershell
+git status --short
 git add .
 git status --short
-git commit -m "Describe the change"
+git ls-files -- .github/workflows/release.yml package-lock.json src-tauri/Cargo.lock src-tauri/vendor/tao/CHASHMYAR_PATCH.md src-tauri/icons/icon.ico
+git commit -m "Add signed updates and notification fixes"
 git push origin main
 ```
 
-تگ ناسازگار، خطای build، شکست تست، مجوز ناکافی، محدودیت صف یا اجرای قدیمی می‌توانند مانع انتشار شوند؛ هر push لزوماً به Release تبدیل نمی‌شود. برای دلایل، اجرای مجدد، Draft یا تگ باقی‌مانده و کار با artifact اصلی، [راهنمای کامل انتشار](RELEASE_GUIDE_FA.md) را ببینید. Draft ناتمام را بدون بررسی دستی Publish نکنید و دارایی نسخهٔ منتشرشده را بی‌صدا جایگزین نکنید.
+پیش از commit مطمئن شوید کلید، رمز، توکن، فایل شخصی، `node_modules`، `dist`، `target` یا `release` در فهرست نیست. مسیرهای دستور `git ls-files` باید دیده شوند. اگر Git هویت commit خواست، نام و ایمیل را تنظیم کنید. برای ورود از Git Credential Manager یا GitHub Desktop استفاده کنید؛ توکن را در URL یا workflow ننویسید. در GitHub Desktop نیز ابتدا مخزن را clone، سپس محتویات کامل سورس از جمله فایل‌های مخفی را کپی و پس از بازبینی commit/push کنید.
+
+## ۴. نتیجه و ارتقای نخست
+
+در **Actions → Automatic Windows release** سه job تخصیص نسخه، ساخت/آزمون ویندوز و انتشار را بررسی کنید. CI جداگانه نیز اجرا می‌شود؛ گردش انتشار منتظر نتیجهٔ آن گردش جداگانه نمی‌ماند، بلکه کنترل‌های خودش را دارد. شکست کلید، تست، دسترسی، صف یا شبکه می‌تواند مانع انتشار شود.
+
+پس از موفقیت، در **Releases** هشت دارایی را بررسی کنید: دو EXE، دو امضای `.exe.sig`، `latest.json`، `SHA256SUMS.txt`، `LICENSE` و `THIRD_PARTY_NOTICES.txt`. GitHub دو آرشیو Source code را جداگانه نمایش می‌دهد. از `Get-FileHash` و فهرست همان Release برای مقایسهٔ هش استفاده کنید؛ هش به‌تنهایی هویت ناشر نیست. امضای updater با گواهی Authenticode ویندوز متفاوت است، بنابراین SmartScreen ممکن است هشدار دهد.
+
+نسخه‌های قبلی که updater ندارند، انتشار نخست امضاشده را خودکار دریافت نمی‌کنند: ابتدا از داده‌ها پشتیبان بگیرید، برنامه را کامل ببندید و نسخهٔ جدید را **دستی** نصب یا فایل پرتابل را جایگزین کنید. پس از آن، بررسی و دانلود به‌صورت خودکار انجام می‌شود؛ نصب و راه‌اندازی مجدد تنها با تأیید کاربر است. برای اثبات رفتار واقعی، دو انتشار متوالی با یک کلید و هر دو نسخه را روی ویندوز طبق [چک‌لیست](RELEASE_GUIDE_FA.md) آزمایش کنید.
+
+## ۵. نسخه‌ها و خطاها
+
+نسخهٔ پایهٔ سورس `2.4.7` است. اگر هیچ تگ پایدار برابر یا بالاتر وجود نداشته باشد، اولین انتشار موفق `v2.4.7` و انتشار موفق بعدی معمولاً `v2.4.8` است. اگر تگ برابر یا بالاتری وجود داشته باشد، شماره یک Patch بعد از بزرگ‌ترین تگ پایدار انتخاب می‌شود؛ تگ قبلی بازنویسی نمی‌شود. پس `v2.4.7` فقط وقتی انتخاب می‌شود که هنگام تخصیص واقعاً آزاد باشد و تگ پایداری بالاتر از آن هم نباشد. `main` نسخهٔ پایه را نگه می‌دارد؛ برای انتشار عادی تگ‌گذاری یا افزایش دستی لازم نیست.
+
+برای تغییرات بعدی، ابتدا `main` را با `git pull --ff-only origin main` به‌روز کنید، تغییرات را بازبینی و commit کرده و `git push origin main` بزنید. برای Draft، خطای انتشار یا اجرای قدیمی به [راهنمای بازیابی](RELEASE_GUIDE_FA.md) مراجعه کنید؛ Draft ناتمام را کورکورانه Publish نکنید و دارایی انتشار موجود را بی‌صدا بازنویسی نکنید.

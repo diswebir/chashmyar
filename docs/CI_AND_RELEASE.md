@@ -8,22 +8,19 @@ This repository is configured to build and publish Windows x64 releases from `ma
 
 ## One-time repository setup
 
-1. Extract the complete source bundle and create a new, empty GitHub repository. Choose **Public** if everyone should be able to download its Releases. A Private repository's Releases remain access-restricted. Do not initialize the empty repository with a second README or license.
-2. Retain hidden files, especially `.github/workflows/`, `.gitignore` and `.gitattributes`. Commit the npm/Cargo lockfiles, tests, `assets/branding/`, and all of `src-tauri/vendor/tao/` including its license and patch notice. Do not commit `node_modules/`, `dist/`, Rust `target/`, local `release/`, secrets or signing certificates.
-3. In repository settings, allow GitHub Actions and the pinned actions used by the workflows. The publication job requests `contents: write`; repository/organization policy and tag rulesets must permit `github-actions[bot]` to create tags and Releases. The workflow uses the short-lived `GITHUB_TOKEN`; do not add a personal token to source or workflow files. Account runner availability, usage limits or organizational restrictions can still stop the run.
-4. In a shell at the project root, initialize the empty repository, review and push. Replace the placeholders with your own owner and repository:
+1. The updater is pinned to **`diswebir/chashmyar`**. Clone the existing repository and preserve its history and tags; do not force-push. To use a different repository you must deliberately change the fixed endpoint, download-URL policy, release link and related tests. Extract and copy all source files, including `.github/`, `.gitignore`, lockfiles, `assets/branding/` and the entire licensed `src-tauri/vendor/tao/`. Do not commit `release/`, build output or keys.
+2. Enable GitHub Actions and the pinned actions. The publication job requests `contents: write`; repository policy and tag rulesets must allow `github-actions[bot]` to create tags and releases. Do not store a personal access token in source.
+3. **Before pushing**, create or recover your Tauri updater signing key as explained in the [Persian step-by-step guide](UPDATER_SIGNING_FA.md). Generate a key only once, outside the repository on a trusted machine; back up the private key and password securely. The source bundle includes no production key. Store the following under **Settings → Secrets and variables → Actions**:
 
-```sh
-git init -b main
-git add .
-git status --short
-git ls-files -- .github/workflows/ci.yml .github/workflows/release.yml package-lock.json src-tauri/Cargo.lock src-tauri/vendor/tao/CHASHMYAR_PATCH.md src-tauri/icons/icon.ico
-git commit -m "Prepare ChashmYar source"
-git remote add origin https://github.com/OWNER/REPOSITORY.git
-git push -u origin main
-```
+| Setting | Name | Value |
+|---|---|---|
+| Repository secret | `TAURI_SIGNING_PRIVATE_KEY` | Entire private-key file contents, not its path |
+| Repository secret | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Key password, if one was set |
+| Repository variable | `CHASHMYAR_UPDATER_PUBLIC_KEY` | Entire matching `.pub` file contents, not its path |
 
-Authenticate with your normal Git credential manager or GitHub Desktop; a personal access token used to push workflow files may require the relevant workflow permission. If a repository already has history, clone and integrate changes with that history instead of force-pushing a new root.
+No private key is needed by the publication job. Missing or mismatched keys prevent release. Protect `main`, review trusted build scripts and restrict repository access: code executing with a secret can exfiltrate it. Never print, commit, upload or paste the private key in support requests. Keep the same key across releases; changing it breaks automatic updates for already installed versions and requires a trusted manual migration.
+
+4. Review the copy using `git status --short`, commit, and push to `main` using normal credentials. See the [Persian quickstart](GITHUB_QUICKSTART_FA.md) for clone and push commands. Public downloads require a public repository. The Actions queue, permissions and runner availability can still prevent release.
 
 ## What runs
 
@@ -32,31 +29,37 @@ Authenticate with your normal Git credential manager or GitHub Desktop; a person
 | `.github/workflows/ci.yml` | Push to `main`, pull request, manual dispatch | Ubuntu: frontend build; version, branding and local-doc-link checks; Rust policy/compatibility; offline release simulation; notices; browser/mock suites. Repository permission is read-only. |
 | `.github/workflows/release.yml` | Push to `main`, manual dispatch on `main` | Serial prepare → Windows x64 build/tests → publish. The independent CI workflow is **not** a dependency of publication; release runs its own checks. |
 
-The release planner checks the exact source commit and existing stable tags. The Windows job stamps a versioned tree, runs checks, creates the NSIS installer and portable executable, verifies the tree and stages the release files. The separate publish job downloads that build artifact, creates the matching annotated tag and a temporary draft, uploads five assets without overwriting existing ones, and checks GitHub-reported SHA-256 digests before publishing. The workflow artifact is retained for 14 days. Only the publish job requests write access; action references are pinned to commit SHAs.
+The release planner checks the exact source commit and existing stable tags. The Windows job verifies the full version-file contents against the source, stamps the resulting tree, runs checks, creates the NSIS installer and portable executable, verifies the tree and stages the release files. The separate publish job downloads that build artifact, creates the matching annotated tag and a temporary draft, uploads eight assets without overwriting existing ones, verifies both signed updater payloads and their versions, and checks GitHub-reported SHA-256 digests. It refreshes tags before publication, explicitly marks the verified release as Latest, and checks the GitHub Latest API with bounded retries. External/manual writers can still race that final check; restrict and coordinate them. If Latest confirmation fails, the release may already be public: inspect it rather than publishing again blindly. The workflow artifact is retained for 14 days. Only the publish job requests write access; action references are pinned to commit SHAs.
 
 `queue: max` allows up to 100 pending runs in the concurrency group. GitHub may cancel additional runs, and pending order is not a guarantee of commit order. A source superseded by a newer automatic release is skipped rather than published out of order. Force-pushes, tag conflicts, failed tests, missing digests, permissions and network failures may also prevent a Release. Therefore every push **requests** a release, but not every push is guaranteed to become one.
 
 ## Versions and assets
 
-The source baseline is `2.4.3`. In a new repository with no higher stable tags, a successful first push normally publishes `v2.4.4`; a subsequent successful source commit normally produces `v2.4.5`. The planner chooses the next patch after the greater of the source baseline and existing stable tags. Stable numeric versions are supported, with each Windows version component at most `65535`.
+The source baseline is `2.4.7`. If every existing stable tag is lower, the first successful push publishes `v2.4.7`; a subsequent successful source commit normally produces `v2.4.8`. If a stable tag equals or exceeds the baseline, the planner allocates the next patch after the greatest stable tag and never overwrites it. Stable numeric versions are supported, with each Windows version component at most `65535`; after an occupied maximum patch, advance the major/minor baseline.
 
 `main` is not version-bumped by the workflow. The release tag points to a version-only child of the triggering source commit; its npm and Rust manifests/lockfiles and Tauri config match the released binaries. Thus `package.json` on `main` is not a reliable way to identify the latest Release. A normal push needs no manually created tag or Publish click. `CHANGELOG.md` is maintained by humans.
 
-A published Release should contain exactly these five uploaded assets; GitHub also supplies source-code archives separately:
+A published Release should contain exactly these eight uploaded assets; GitHub also supplies source-code archives separately:
 
 ```text
 ChashmYar_<version>_x64-setup.exe
 ChashmYar-<version>-portable.exe
+ChashmYar_<version>_x64-setup.exe.sig
+ChashmYar-<version>-portable.exe.sig
+latest.json
 SHA256SUMS.txt
 LICENSE
 THIRD_PARTY_NOTICES.txt
 ```
 
-Check Actions → **Automatic Windows release**, then Releases. Verify the downloaded files using `Get-FileHash` and the matching lines of `SHA256SUMS.txt`. A hash compares a file with its manifest, not the identity of its publisher. Default builds are unsigned, can trigger SmartScreen, and require WebView2. Previously supplied 2.4.3 executables predate the new logo; only a new build from this source can contain it.
+Check Actions → **Automatic Windows release**, then Releases: the intended release must have the Latest badge and its `latest.json` must be reachable at `https://github.com/diswebir/chashmyar/releases/latest/download/latest.json`. Verify the downloaded files using `Get-FileHash` and the matching lines of `SHA256SUMS.txt`. A hash compares a file with its manifest, not the identity of its publisher. Tauri updater signatures are not an Authenticode publisher certificate; without a separate certificate Windows can still warn via SmartScreen. WebView2 is required. Previously supplied 2.4.3 executables predate the new logo; only a new build from this source can contain it.
+
+Clients without this updater and embedded public key must first be upgraded manually from a trusted release. Later versions check and download automatically; installation and restart require explicit confirmation. Test both installed and portable updates across two releases on real Windows, including settings, write failures and rollback. The automated checks are not a substitute for that interactive test.
 
 ## Failure and recovery
 
 - **No Release / permission denied:** inspect all three jobs, enable Actions and permitted actions, verify `contents: write`, organization policy, tag rulesets and runner availability. Private repositories do not provide public downloads.
+- **Missing signing key, wrong password or mismatch:** verify repository secret/variable names and key pair; do not print secret values. A changed public key breaks existing clients unless they are migrated manually.
 - **Failed publication:** before publishing a newer source, try **Re-run failed jobs** on the failed run so it can reuse that run's original build artifact while retained. A complete rebuild can yield different binary hashes; a conflicting draft is deliberately not overwritten.
 - **Draft, tag or digest mismatch:** inspect the exact job log, remote tag, existing draft and its ownership. Do not blindly publish a draft, retarget a tag or overwrite an existing public asset. Missing or mismatched GitHub digests prevent automatic publication.
 - **Failure after the publication request:** the remote Release may already be public even if the final verification failed. Check its actual status, tag and hashes before taking action.

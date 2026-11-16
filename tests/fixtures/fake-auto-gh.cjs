@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { spawnSync } = require('node:child_process');
 const stateFile = process.env.CHASHMYAR_FAKE_AUTO_GH_STATE;
 const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
 const args = process.argv.slice(2);
@@ -19,11 +20,12 @@ const upload = /^https:\/\/uploads\.github\.com\/repos\/([^/]+\/[^/]+)\/releases
 const list = /^repos\/[^/]+\/[^/]+\/releases\?per_page=100&page=(\d+)$/.exec(endpoint);
 const byId = /^repos\/[^/]+\/[^/]+\/releases\/(\d+)$/.exec(endpoint);
 const byTag = /^repos\/[^/]+\/[^/]+\/releases\/tags\/(v\d+\.\d+\.\d+)$/.exec(endpoint);
+const latest = /^repos\/[^/]+\/[^/]+\/releases\/latest$/.test(endpoint);
 const repository = /^repos\/[^/]+\/[^/]+$/.test(endpoint);
 const create = /^repos\/[^/]+\/[^/]+\/releases$/.test(endpoint) && method === 'POST';
 const operation = args[0] === 'release' ? args[1]
   : upload ? 'upload' : list ? 'list' : byId ? (method === 'PATCH' ? 'publish' : 'read')
-    : byTag ? 'tag-view' : repository ? 'repo' : create ? 'create' : 'unknown';
+    : byTag ? 'tag-view' : latest ? 'latest' : repository ? 'repo' : create ? 'create' : 'unknown';
 const named = operation === 'upload' ? `upload:${decodeURIComponent(upload[3])}` : operation;
 if (state.failOnce === operation || state.failOnce === named) {
   state.failOnce = null;
@@ -48,6 +50,14 @@ if (args[0] === 'api') {
     if (page < 1) die('invalid page');
     const visible = releases().filter(release => !release.hiddenFromListing);
     respond(visible.slice((page - 1) * 100, page * 100).map(publicRelease));
+  }
+  if (latest && method === 'GET') {
+    const stale = (state.staleLatestReads || 0) > 0;
+    if (stale) state.staleLatestReads--;
+    const tag = stale ? state.staleLatestTag : state.latestTag;
+    const release = releases().find(r => r.tag_name === tag && !r.draft && !r.prerelease);
+    if (!release) die('gh: Latest release not found (HTTP 404)');
+    respond(publicRelease(release));
   }
   if (byTag && method === 'GET') {
     // GitHub's by-tag REST endpoint does NOT return unpublished drafts.
@@ -81,8 +91,9 @@ if (args[0] === 'api') {
     }
     if (method === 'PATCH') {
       if (!release.draft || value('--field', 'draft') !== 'false' || value('--field', 'prerelease') !== 'false'
-          || value('--raw-field', 'tag_name') !== release.tag_name) die('unsafe publish');
-      release.draft = false; respond(publicRelease(release));
+          || value('--raw-field', 'tag_name') !== release.tag_name
+          || value('--raw-field', 'make_latest') !== 'true') die('unsafe publish or Latest marker omitted');
+      release.draft = false; state.latestTag = release.tag_name; respond(publicRelease(release));
     }
   }
   if (upload && method === 'POST') {
@@ -98,7 +109,18 @@ if (args[0] === 'api') {
       state.delayDigestOnce = null;
       asset._realDigest = asset.digest; asset.digest = null; asset._pendingReads = 1;
     }
-    release.assets.push(asset); respond(publicAsset(asset));
+    release.assets.push(asset);
+    // Test-only race: a separate writer creates a newer tag on the bare remote
+    // while this job is uploading. Do not put that tag in the local checkout.
+    const injection = state.injectRemoteTag;
+    if (injection && injection.onAsset === name) {
+      if (!/^v\d+\.\d+\.\d+$/.test(injection.tag) || !/^[0-9a-f]{40}$/.test(injection.commit)) die('invalid test tag injection');
+      const created = spawnSync('git', ['--git-dir', injection.bare, 'update-ref',
+        `refs/tags/${injection.tag}`, injection.commit, '0'.repeat(40)], { encoding: 'utf8' });
+      if (created.error || created.status !== 0) die('failed to inject competing remote tag');
+      state.injectRemoteTag = null;
+    }
+    respond(publicAsset(asset));
   }
   die(`unknown fake API request: ${method} ${endpoint}`);
 }

@@ -37,6 +37,7 @@ interface AppStore {
   applyProfile: (profile: Settings["eye"]["profile"]) => Promise<void>;
 
   setColorSafe: (enabled: boolean) => Promise<void>;
+  retryColorVision: () => Promise<void>;
   addWhitelistEntry: (entry: string) => Promise<void>;
   removeWhitelistEntry: (entry: string) => Promise<void>;
   resetWhitelistDefaults: () => Promise<void>;
@@ -88,6 +89,7 @@ const empty: AppSnapshot = {
   eye: {
     gammaSupported: true,
     gammaApplied: false,
+    colorVisionStatus: "off",
     captureExcluded: false,
     effectiveKelvin: DEFAULT_SETTINGS.eye.kelvin,
     targetKelvin: DEFAULT_SETTINGS.eye.kelvin,
@@ -140,6 +142,7 @@ export const useAppStore = create<AppStore>((set, get) => {
   applyProfile: async (profile) => acceptSnapshot(await call<AppSnapshot>("apply_profile", { profile })),
 
   setColorSafe: async (enabled) => acceptSnapshot(await call<AppSnapshot>("set_color_safe", { enabled })),
+  retryColorVision: async () => acceptSnapshot(await call<AppSnapshot>("retry_color_vision")),
   addWhitelistEntry: async (entry) => acceptSnapshot(await call<AppSnapshot>("whitelist_add", { entry })),
   removeWhitelistEntry: async (entry) => acceptSnapshot(await call<AppSnapshot>("whitelist_remove", { entry })),
   resetWhitelistDefaults: async () => acceptSnapshot(await call<AppSnapshot>("whitelist_reset_defaults")),

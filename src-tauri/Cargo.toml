@@ -1,6 +1,6 @@
 [package]
 name = "chashmyar"
-version = "2.4.3"
+version = "2.4.7"
 description = "ChashmYar — eye-care, screen dimmer and strict Pomodoro for Windows"
 authors = ["Reza Jantrani and ChashmYar contributors"]
 license = "MIT"
@@ -14,11 +14,18 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+# The installer and portable executable are built separately. The portable
+# feature is deliberately not enabled for the NSIS build.
+[features]
+portable = []
+
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-store = "2"
 tauri-plugin-single-instance = "2"
+# Pin the verifier version: requireSignedVersion and strict minisign validation.
+tauri-plugin-updater = { version = "=2.13.3", default-features = false, features = ["rustls-tls", "system-proxy"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 parking_lot = "0.12"
@@ -34,6 +41,7 @@ windows = { version = "0.58", features = [
     "Win32_UI_Accessibility",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_ColorSystem",
+    "Win32_UI_Magnification",
     "Win32_System_SystemInformation",
     "Win32_System_Registry",
     "Win32_System_Threading",

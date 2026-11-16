@@ -4,8 +4,11 @@ import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { testSigner } from './fixtures/test-updater-signature.mjs';
 
 const root = process.cwd();
+const signer = testSigner();
+const signingEnv = { CHASHMYAR_UPDATER_PUBLIC_KEY: signer.publicKey, GITHUB_REPOSITORY: 'example/ChashmYar' };
 const temp = mkdtempSync(join(tmpdir(), 'chashmyar-release-test-'));
 let checks = 0;
 const ok = (value, message) => { assert.ok(value, message); checks++; };
@@ -16,7 +19,7 @@ const run = (script, args = [], env = {}) => spawnSync(process.execPath, [join(t
 const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
 const tag = `v${version}`;
 const files = ['package.json', 'package-lock.json', 'src-tauri/tauri.conf.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock',
-  'scripts/version.mjs', 'scripts/stage-release.mjs', 'scripts/create-draft-release.mjs'];
+  'scripts/version.mjs', 'scripts/stage-release.mjs', 'scripts/updater-signatures.mjs', 'scripts/create-draft-release.mjs'];
 try {
   for (const file of files) {
     mkdirSync(dirname(join(temp, file)), { recursive: true });
@@ -35,28 +38,52 @@ try {
   eq(run('scripts/version.mjs', ['set', version]).status, 0, 'restored test fixture version');
 
   const makePE = (machine) => {
-    const bytes = Buffer.alloc(256); bytes.write('MZ', 0); bytes.writeUInt32LE(0x80, 0x3c);
-    bytes.write('PE\0\0', 0x80, 'binary'); bytes.writeUInt16LE(machine, 0x84); return bytes;
+    const bytes = Buffer.alloc(768); bytes.write('MZ', 0); bytes.writeUInt32LE(0x80, 0x3c);
+    bytes.write('PE\0\0', 0x80, 'binary'); bytes.writeUInt16LE(machine, 0x84);
+    if (machine === 0x8664) {
+      bytes.write('CHASHMYAR_PORTABLE_UPDATER_V1', 0xc0);
+      bytes.write(signer.publicKey.trim(), 0x120);
+    }
+    return bytes;
   };
   mkdirSync(join(temp, 'release/windows'), { recursive: true });
-  writeFileSync(join(temp, `release/windows/ChashmYar_${version}_x64-setup.exe`), makePE(0x14c));
-  writeFileSync(join(temp, `release/windows/ChashmYar-${version}-portable.exe`), makePE(0x8664));
+  mkdirSync(join(temp, 'release/updater'), { recursive: true });
+  for (const [name, pe] of [[`ChashmYar_${version}_x64-setup.exe`, makePE(0x14c)], [`ChashmYar-${version}-portable.exe`, makePE(0x8664)]]) {
+    writeFileSync(join(temp, 'release/windows', name), pe);
+    writeFileSync(join(temp, 'release/updater', `${name}.sig`), signer.sign(pe, version, name));
+  }
   writeFileSync(join(temp, 'LICENSE'), 'fixture license\n');
   writeFileSync(join(temp, 'THIRD_PARTY_NOTICES.txt'), 'fixture notices\n');
-  eq(run('scripts/stage-release.mjs', ['--tag', tag]).status, 0, 'stage expected assets');
-  eq(run('scripts/stage-release.mjs', ['--verify', '--tag', tag]).status, 0, 'checksums and PE validate');
+  ok(run('scripts/stage-release.mjs', ['--tag', tag], { ...signingEnv, CHASHMYAR_UPDATER_PUBLIC_KEY: '' }).status !== 0, 'missing public key fails closed');
+  eq(run('scripts/stage-release.mjs', ['--tag', tag], signingEnv).status, 0, 'stage expected signed assets');
+  eq(run('scripts/stage-release.mjs', ['--verify', '--tag', tag], signingEnv).status, 0, 'checksums, signatures and PE validate');
+  const portableName = `ChashmYar-${version}-portable.exe`;
+  const sourcePortable = join(temp, 'release/windows', portableName);
+  const portableSig = join(temp, 'release/updater', `${portableName}.sig`);
+  const goodPortable = readFileSync(sourcePortable);
+  for (const [offset, description] of [[0xc0, 'portable marker'], [0x120, 'embedded public key']]) {
+    const changed = Buffer.from(goodPortable); changed[offset] ^= 1;
+    writeFileSync(sourcePortable, changed);
+    writeFileSync(portableSig, signer.sign(changed, version, portableName));
+    ok(run('scripts/stage-release.mjs', ['--tag', tag], signingEnv).status !== 0, `validly signed executable missing ${description} is rejected`);
+  }
+  writeFileSync(sourcePortable, goodPortable);
+  writeFileSync(portableSig, signer.sign(goodPortable, version, portableName));
+  eq(run('scripts/stage-release.mjs', ['--tag', tag], signingEnv).status, 0, 'valid portable source restored');
   const sums = readFileSync(join(temp, 'release/staging/SHA256SUMS.txt'), 'utf8').trim().split('\n');
-  eq(sums.length, 4, 'checksums cover both EXEs and notices');
+  eq(sums.length, 7, 'checksums cover both EXEs, signatures, manifest and notices');
   const portable = join(temp, `release/staging/ChashmYar-${version}-portable.exe`);
   writeFileSync(portable, Buffer.from('corrupt'));
-  ok(run('scripts/stage-release.mjs', ['--verify']).status !== 0, 'corrupt asset fails verification');
-  eq(run('scripts/stage-release.mjs').status, 0, 'staging can be recreated');
-  ok(run('scripts/stage-release.mjs', ['--tag', 'v99.0.0']).status !== 0, 'stage rejects mismatched tag');
-  ok(run('scripts/stage-release.mjs', ['--invalid']).status !== 0, 'stage rejects unknown arguments');
+  ok(run('scripts/stage-release.mjs', ['--verify'], signingEnv).status !== 0, 'corrupt asset fails verification');
+  eq(run('scripts/stage-release.mjs', [], signingEnv).status, 0, 'staging can be recreated');
+  const other = testSigner();
+  ok(run('scripts/stage-release.mjs', ['--verify'], { ...signingEnv, CHASHMYAR_UPDATER_PUBLIC_KEY: other.publicKey }).status !== 0, 'wrong public key is rejected');
+  ok(run('scripts/stage-release.mjs', ['--tag', 'v99.0.0'], signingEnv).status !== 0, 'stage rejects mismatched tag');
+  ok(run('scripts/stage-release.mjs', ['--invalid'], signingEnv).status !== 0, 'stage rejects unknown arguments');
 
   const stateFile = join(temp, 'fake-gh-state.json');
   const fakeEnv = {
-    GITHUB_REPOSITORY: 'example/ChashmYar',
+    ...signingEnv,
     CHASHMYAR_TEST_GH: resolve(root, 'tests/fixtures/fake-gh.cjs'),
     CHASHMYAR_FAKE_GH_STATE: stateFile,
   };

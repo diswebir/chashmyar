@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /** Keep the five release version fields in sync. Run from the project root. */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const root = process.cwd();
 const files = {
@@ -12,7 +13,6 @@ const files = {
 const path = (key) => join(root, files[key]);
 const read = (key) => readFileSync(path(key), 'utf8');
 const json = (key) => JSON.parse(read(key));
-const saveJson = (key, obj) => writeFileSync(path(key), JSON.stringify(obj, null, 2) + '\n');
 const cargoVersionPattern = /(^\[package\][\s\S]*?^version\s*=\s*")([^"\r\n]+)(")/m;
 const cargoLockPattern = /(^\[\[package\]\]\r?\nname\s*=\s*"chashmyar"\r?\nversion\s*=\s*")([^"\r\n]+)(")/gm;
 const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -52,29 +52,51 @@ function check(tag) {
   if (tag !== undefined && tag !== `v${v}`) throw new Error(`Tag must be v${v}; got ${tag}`);
   console.log(`✓ Version ${v} is consistent${tag ? ` with tag ${tag}` : ''}`);
 }
-function setVersion(v) {
+// This is also used by auto-release to independently validate the indexed
+// release tree against the original committed contents, not merely filenames.
+export const VERSION_FILES = Object.values(files).sort();
+export function versionedContents(contents, v) {
   validateVersion(v);
-  // Parse and validate all inputs before writing any file.
-  versions();
-  const pkg = json('pkg'), lock = json('lock'), tauri = json('tauri');
-  const cargo = read('cargo'), cargoLock = read('cargoLock');
+  const pkg = JSON.parse(contents[files.pkg]);
+  const lock = JSON.parse(contents[files.lock]);
+  const tauri = JSON.parse(contents[files.tauri]);
+  const cargo = contents[files.cargo], cargoLock = contents[files.cargoLock];
+  if (typeof pkg.version !== 'string' || typeof lock.version !== 'string'
+      || typeof lock.packages?.['']?.version !== 'string' || typeof tauri.version !== 'string') {
+    throw new Error('Missing version field in a JSON manifest or lockfile');
+  }
+  singleMatch(cargo, cargoVersionPattern, 'Cargo.toml');
+  singleMatch(cargoLock, cargoLockPattern, 'Cargo.lock');
   pkg.version = v; lock.version = v; lock.packages[''].version = v; tauri.version = v;
-  const updatedCargo = cargo.replace(cargoVersionPattern, (_m, a, _old, b) => a + v + b);
-  const updatedLock = cargoLock.replace(cargoLockPattern, (_m, a, _old, b) => a + v + b);
-  saveJson('pkg', pkg); saveJson('lock', lock); saveJson('tauri', tauri);
-  writeFileSync(path('cargo'), updatedCargo); writeFileSync(path('cargoLock'), updatedLock);
+  const jsonText = (object) => JSON.stringify(object, null, 2) + '\n';
+  return {
+    [files.pkg]: jsonText(pkg),
+    [files.lock]: jsonText(lock),
+    [files.tauri]: jsonText(tauri),
+    [files.cargo]: cargo.replace(cargoVersionPattern, (_m, a, _old, b) => a + v + b),
+    [files.cargoLock]: cargoLock.replace(cargoLockPattern, (_m, a, _old, b) => a + v + b),
+  };
+}
+function setVersion(v) {
+  // Compute every result before writing anything. Source and worktree may use
+  // different newline conventions, but Git normalizes the staged tree.
+  const contents = Object.fromEntries(Object.keys(files).map(key => [files[key], read(key)]));
+  const updated = versionedContents(contents, v);
+  for (const [name, content] of Object.entries(updated)) writeFileSync(join(root, name), content);
   check();
   console.log('Version files updated. Normal releases are tagged automatically after a successful main push.');
 }
 
-try {
-  const [command = 'check', ...args] = process.argv.slice(2);
-  if (command === 'check') {
-    if (args.length !== 0 && !(args.length === 2 && args[0] === '--tag')) throw new Error('Usage: node scripts/version.mjs check [--tag v2.4.1]');
-    check(args.length ? args[1] : undefined);
-  } else if (command === 'set' && args.length === 1) setVersion(args[0]);
-  else throw new Error('Usage: node scripts/version.mjs check [--tag vX.Y.Z] | set X.Y.Z');
-} catch (error) {
-  console.error('Version error:', error.message);
-  process.exitCode = 1;
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  try {
+    const [command = 'check', ...args] = process.argv.slice(2);
+    if (command === 'check') {
+      if (args.length !== 0 && !(args.length === 2 && args[0] === '--tag')) throw new Error('Usage: node scripts/version.mjs check [--tag vX.Y.Z]');
+      check(args.length ? args[1] : undefined);
+    } else if (command === 'set' && args.length === 1) setVersion(args[0]);
+    else throw new Error('Usage: node scripts/version.mjs check [--tag vX.Y.Z] | set X.Y.Z');
+  } catch (error) {
+    console.error('Version error:', error.message);
+    process.exitCode = 1;
+  }
 }

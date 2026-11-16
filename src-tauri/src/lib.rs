@@ -4,7 +4,7 @@
 //! ------------
 //! ```text
 //!  ┌────────────────────────────────┐      events (app://snapshot …)      ┌──────────────────┐
-//!  │  Rust core                     │ ──────────────────────────────────▶ │  6 webviews      │
+//!  │  Rust core                     │ ──────────────────────────────────▶ │  7 webviews      │
 //!  │  Arc<Mutex<Runtime>>           │ ◀────────────────────────────────── │  React + Zustand │
 //!  │  timer · gamma lerp · hook     │           invoke(commands)           └──────────────────┘
 //!  │  idle · foreground · analytics │
@@ -17,6 +17,8 @@ pub mod analytics;
 pub mod analytics_record;
 pub mod commands;
 pub mod coalesced_signal;
+pub mod color_filter;
+pub mod color_vision;
 pub mod diag;
 pub mod display;
 pub mod engine;
@@ -27,6 +29,7 @@ pub mod foreground_match;
 pub mod idle;
 pub mod locker;
 pub mod overlay_policy;
+pub mod popup_layer;
 pub mod persistence;
 pub mod self_test;
 pub mod score;
@@ -34,6 +37,10 @@ pub mod state;
 pub mod timer;
 pub mod timer_rules;
 pub mod tray;
+pub mod update_policy;
+pub mod updater;
+#[cfg(all(windows, feature = "portable"))]
+pub mod portable_replace;
 pub mod windows;
 
 use parking_lot::Mutex;
@@ -55,6 +62,9 @@ pub fn run() {
             windows::focus_main(app);
         }))
         .plugin(tauri_plugin_store::Builder::new().build())
+        // The public key is injected at compile time; it is never fetched from
+        // the network and the private signing key is not part of the app.
+        .plugin(tauri_plugin_updater::Builder::new().pubkey(updater::PUBLIC_KEY.trim()).build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--autostart"]),
@@ -77,6 +87,7 @@ pub fn run() {
             }
             let shared: Shared = Arc::new(Mutex::new(runtime));
             app.manage(shared.clone());
+            app.manage(updater::UpdateState::new());
 
             /* -------------------------- windows & tray ------------------------- */
             diag::log("creating windows…");
@@ -141,6 +152,9 @@ pub fn run() {
             foreground::spawn_watcher(handle.clone(), shared.clone()); // 1.5 s whitelist poll
             display::spawn_reassert_loop(); // 10 s gamma re-assertion
             display::spawn_watchdog(); // detached crash-safe helper
+            updater::start_periodic_checks(handle.clone());
+            #[cfg(all(windows, feature = "portable"))]
+            portable_replace::cleanup_after_successful_start();
 
             {
                 let rt = shared.lock();
@@ -181,7 +195,7 @@ pub fn run() {
                         engine::safe_shutdown(window.app_handle());
                         window.app_handle().exit(0);
                     }
-                } else if label == windows::MICRO || label == windows::MICRO_BREAK {
+                } else if label == windows::MICRO || label == windows::MICRO_BREAK || label == windows::UPDATE_ALERT {
                     api.prevent_close();
                     let _ = window.hide();
                 }
@@ -195,6 +209,7 @@ pub fn run() {
             commands::set_brightness,
             commands::set_eye_enabled,
             commands::apply_profile,
+            commands::retry_color_vision,
             commands::set_color_safe,
             commands::whitelist_add,
             commands::whitelist_remove,
@@ -227,7 +242,13 @@ pub fn run() {
             commands::reset_gamma,
             commands::open_log_folder,
             commands::open_creator_website,
+            commands::open_releases_page,
             commands::quit_app,
+            updater::update_status,
+            updater::check_for_updates,
+            updater::update_open_details,
+            updater::update_dismiss_notice,
+            updater::install_ready_update,
         ])
         .build(tauri::generate_context!());
 

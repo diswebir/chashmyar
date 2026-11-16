@@ -21,7 +21,8 @@ pub fn get_snapshot(app: AppHandle, shared: State<'_, Shared>) -> Snapshot {
 }
 
 #[tauri::command(async)]
-pub fn update_settings(app: AppHandle, shared: State<'_, Shared>, settings: Settings) -> Snapshot {
+pub fn update_settings(app: AppHandle, shared: State<'_, Shared>, mut settings: Settings) -> Snapshot {
+    settings.eye.normalize_color_vision();
     let (mode_changed, theme_changed, language_changed);
     {
         let mut rt = shared.lock();
@@ -64,6 +65,7 @@ pub fn patch_settings(app: AppHandle, shared: State<'_, Shared>, patch: serde_js
             }
         }
         let mut next: Settings = serde_json::from_value(current).map_err(|e| e.to_string())?;
+        next.eye.normalize_color_vision();
         next.timer.work_minutes = next.timer.work_minutes.clamp(1, 180);
         next.timer.break_minutes = next.timer.break_minutes.clamp(1, 90);
         next.timer.long_break_minutes = next.timer.long_break_minutes.clamp(1, 120);
@@ -140,6 +142,14 @@ pub fn apply_profile(app: AppHandle, shared: State<'_, Shared>, profile: String)
     let snapshot = store_and_refresh(&app, &shared);
     crate::tray::sync_eye_check(&app, true);
     snapshot
+}
+
+/* ------------------------- colour-vision assistance ------------------------ */
+
+#[tauri::command(async)]
+pub fn retry_color_vision(app: AppHandle, shared: State<'_, Shared>) -> Snapshot {
+    crate::color_filter::retry();
+    engine::refresh(&app, shared.inner())
 }
 
 /* ------------------------- colour-safe whitelist (v2) ---------------------- */
@@ -602,6 +612,22 @@ pub fn open_creator_website() -> Result<(), String> {
         std::process::Command::new("xdg-open").arg("https://disweb.ir/")
             .spawn().map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn open_releases_page() -> Result<(), String> {
+    const URL: &str = "https://github.com/diswebir/chashmyar/releases/latest";
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("rundll32.exe")
+            .args(["url.dll,FileProtocolHandler", URL])
+            .creation_flags(0x08000000)
+            .spawn().map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(windows))]
+    { std::process::Command::new("xdg-open").arg(URL).spawn().map_err(|e| e.to_string())?; }
     Ok(())
 }
 

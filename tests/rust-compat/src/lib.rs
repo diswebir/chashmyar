@@ -6,6 +6,12 @@ mod analytics_record;
 #[cfg(test)]
 #[path = "../../../src-tauri/src/state.rs"]
 mod state;
+#[cfg(test)]
+#[path = "../../../src-tauri/src/color_vision.rs"]
+mod color_vision;
+#[cfg(test)] mod color_filter {
+    pub fn status() -> super::color_vision::Status { super::color_vision::Status::Off }
+}
 #[cfg(test)] mod analytics { pub fn epoch() -> u64 { 0 } }
 #[cfg(test)] mod display {
     pub const NEUTRAL_KELVIN: u32 = 6500;
@@ -71,6 +77,63 @@ mod tests {
         let saved = serde_json::to_value(settings).unwrap();
         assert_eq!(saved["lock"]["rotateSeconds"], 45);
         assert_eq!(saved["system"]["autostart"], false);
+    }
+
+    #[test]
+    fn old_settings_keep_all_choices_and_default_colour_vision_off() {
+        for old in [
+            json!({}),
+            json!({"eye": {}}),
+            json!({"eye": {"enabled": false, "kelvin": 3200, "scheduleEnabled": false, "colorSafeEnabled": false}, "system": {"soundEnabled": true}}),
+        ] {
+            let settings: super::state::Settings = serde_json::from_value(old.clone()).unwrap();
+            assert_eq!(settings.eye.color_vision_profile, "off");
+            assert_eq!(settings.eye.color_vision_strength, 60);
+            if old.get("system").is_some() {
+                assert!(!settings.eye.enabled && !settings.eye.schedule_enabled && !settings.eye.color_safe_enabled);
+                assert_eq!(settings.eye.kelvin, 3200); assert!(settings.system.sound_enabled);
+            }
+        }
+    }
+
+    #[test]
+    fn colour_vision_preferences_round_trip_and_unrecognized_values_fail_closed() {
+        for profile in ["off", "protanopia", "deuteranopia", "tritanopia"] {
+            let input = json!({"eye": {"colorVisionProfile": profile, "colorVisionStrength": 35, "kelvin": 3450}});
+            let mut settings: super::state::Settings = serde_json::from_value(input).unwrap();
+            settings.eye.normalize_color_vision();
+            let saved = serde_json::to_value(&settings).unwrap();
+            assert_eq!(saved["eye"]["colorVisionProfile"], profile);
+            assert_eq!(saved["eye"]["colorVisionStrength"], 35);
+            let loaded: super::state::Settings = serde_json::from_value(saved).unwrap();
+            assert_eq!(loaded.eye.kelvin, 3450);
+        }
+        let mut invalid: super::state::Settings = serde_json::from_value(
+            json!({"eye": {"colorVisionProfile": "unknown-future-mode", "colorVisionStrength": 500, "kelvin": 3450}})
+        ).unwrap();
+        invalid.eye.normalize_color_vision();
+        assert_eq!(invalid.eye.color_vision_profile, "off");
+        assert_eq!(invalid.eye.color_vision_strength, 100);
+        assert_eq!(invalid.eye.kelvin, 3450);
+        for bad_profile in [json!(null), json!(false), json!({"other": true}), json!([1, 2])] {
+            let mut loaded: super::state::Settings = serde_json::from_value(json!({
+                "eye": {"colorVisionProfile": bad_profile, "kelvin": 3450, "enabled": false},
+                "system": {"soundEnabled": true}
+            })).unwrap();
+            loaded.eye.normalize_color_vision();
+            assert_eq!(loaded.eye.color_vision_profile, "off");
+            assert_eq!(loaded.eye.kelvin, 3450);
+            assert!(!loaded.eye.enabled && loaded.system.sound_enabled);
+        }
+        for bad_strength in [json!(null), json!(-1), json!("bad"), json!([60]), json!(60.5)] {
+            let loaded: super::state::Settings = serde_json::from_value(json!({
+                "eye": {"colorVisionProfile": "protanopia", "colorVisionStrength": bad_strength, "kelvin": 3450},
+                "system": {"soundEnabled": true}
+            })).unwrap();
+            assert_eq!(loaded.eye.color_vision_strength, 0);
+            assert_eq!(loaded.eye.kelvin, 3450);
+            assert!(loaded.system.sound_enabled);
+        }
     }
 
     #[test]

@@ -4,6 +4,8 @@
 
 export type TimerPhase = "idle" | "work" | "break" | "longBreak";
 export type EyeProfileId = "reading" | "nightCoding" | "daylight" | "custom";
+export type ColorVisionProfile = "off" | "protanopia" | "deuteranopia" | "tritanopia";
+export type ColorVisionStatus = "off" | "pending" | "active" | "paused" | "conflict" | "error" | "restoreError" | "unsupported";
 export type WidgetMode = "docked" | "floating";
 export type Theme = "dark" | "light";
 export type Language = "fa" | "en";
@@ -22,6 +24,10 @@ export interface EyeSettings {
   colorSafeEnabled: boolean;
   colorSafeWhitelist: string[];
   transitionMs: number;
+  /** Experimental full-screen recolouring; separate from warm-light presets. */
+  colorVisionProfile: ColorVisionProfile;
+  /** Strength of the effect, not severity of the user's vision. */
+  colorVisionStrength: number;
 }
 
 export interface TimerSettings {
@@ -108,6 +114,8 @@ export interface TimerState {
 export interface EyeInfo {
   gammaSupported: boolean;
   gammaApplied: boolean;
+  /** Most recent native API result; not proof of a physical display change. */
+  colorVisionStatus: ColorVisionStatus;
   /** Best-effort OS capture exclusion; not a guarantee for every recorder. */
   captureExcluded: boolean;
   /** interpolated value currently in the GPU LUT */
@@ -186,6 +194,8 @@ export const DEFAULT_SETTINGS: Settings = {
     colorSafeEnabled: true,
     colorSafeWhitelist: ["Figma.exe", "Photoshop.exe", "Illustrator.exe", "DevTools", "Inspect"],
     transitionMs: 2000,
+    colorVisionProfile: "off",
+    colorVisionStrength: 60,
   },
   timer: {
     workMinutes: 25,

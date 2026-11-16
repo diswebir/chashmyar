@@ -14,7 +14,8 @@ if (check.error || check.status !== 0) process.exit(1);
 const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
 const paths = [
   `ChashmYar_${version}_x64-setup.exe`, `ChashmYar-${version}-portable.exe`,
-  'LICENSE', 'THIRD_PARTY_NOTICES.txt', 'SHA256SUMS.txt',
+  `ChashmYar_${version}_x64-setup.exe.sig`, `ChashmYar-${version}-portable.exe.sig`,
+  'latest.json', 'LICENSE', 'THIRD_PARTY_NOTICES.txt', 'SHA256SUMS.txt',
 ].map((name) => join('release/staging', name));
 
 // The test override runs a local fake CLI, never a real GitHub request.
@@ -41,7 +42,7 @@ try {
   } else if (/release not found/i.test(view.stderr || '')) {
     const notes = [
       'Windows x64: choose the setup or portable executable. WebView2 Runtime is required.',
-      'These binaries are unsigned and may trigger Windows SmartScreen.',
+      'Updater assets carry signatures; the EXEs are not Authenticode-signed and may trigger Windows SmartScreen.',
       'Check SHA256SUMS.txt and review THIRD_PARTY_NOTICES.txt before distribution.',
       'This draft must be reviewed and explicitly published by the maintainer.',
     ].join('\n');

@@ -1,6 +1,7 @@
 name: Automatic Windows release
 
-# Every push to main gets a patch version and, after checks, a public Release.
+# Each main push requests a release: use a newer untagged baseline, otherwise
+# allocate the next patch. Publish automatically only after checks succeed.
 # Tags are created within this same workflow: GITHUB_TOKEN-created pushes do
 # not trigger another push workflow. Manual dispatch is available for recovery.
 on:
@@ -98,10 +99,22 @@ jobs:
         run: npm run test:compat
       - name: Test release automation offline
         run: npm run test:release
-      - name: Build installer and portable executable
+      # Only these two trusted release-build steps receive the signing secret.
+      # A missing/invalid public key or missing private key fails closed.
+      - name: Build installer and portable executable with updater public key
         run: npm run build:win
+        env:
+          CHASHMYAR_UPDATER_PUBLIC_KEY: ${{ vars.CHASHMYAR_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       - name: Verify executable formats
         run: npm run verify:exe
+      - name: Sign portable and verify both updater signatures
+        run: npm run release:sign
+        env:
+          CHASHMYAR_UPDATER_PUBLIC_KEY: ${{ vars.CHASHMYAR_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       - name: Install Chromium
         run: npx playwright install chromium
       - name: Browser and mock-IPC suites
@@ -114,10 +127,11 @@ jobs:
           RELEASE_SOURCE: ${{ github.sha }}
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-      - name: Stage release assets and SHA-256 hashes
+      - name: Stage release assets and verify signatures and SHA-256 hashes
         run: node scripts/stage-release.mjs --tag "$env:RELEASE_TAG"
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          CHASHMYAR_UPDATER_PUBLIC_KEY: ${{ vars.CHASHMYAR_UPDATER_PUBLIC_KEY }}
       - name: Upload verified build to the publication job
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -165,4 +179,5 @@ jobs:
           RELEASE_SOURCE: ${{ github.sha }}
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          CHASHMYAR_UPDATER_PUBLIC_KEY: ${{ vars.CHASHMYAR_UPDATER_PUBLIC_KEY }}
           GH_TOKEN: ${{ github.token }}

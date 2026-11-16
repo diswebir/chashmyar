@@ -17,7 +17,7 @@ ChashmYar schedules work and breaks, offers short exercises, and provides displa
 
 </details>
 
-Screenshots show the browser mock with sample data; they are not evidence of native Windows behavior. The version displayed is the source baseline, not necessarily the latest release.
+Screenshots show the browser mock with sample data; they are not evidence of native Windows behavior. The displayed version is from the time of capture and may differ from the current source or latest release.
 
 ## Download and requirements
 
@@ -27,6 +27,7 @@ Open the repository's **Releases** page and choose a published version. If the p
 |---|---|
 | `ChashmYar_<version>_x64-setup.exe` | Per-user Windows installer |
 | `ChashmYar-<version>-portable.exe` | Direct launch without installing the app |
+| Two `*.exe.sig` files and `latest.json` | Signed-updater signatures and manifest |
 | `SHA256SUMS.txt` | SHA-256 hashes for the release assets |
 | `LICENSE`, `THIRD_PARTY_NOTICES.txt` | Project license and third-party notices |
 
@@ -35,39 +36,41 @@ The intended target is **Windows 10/11 x64** with [Microsoft Edge WebView2 Runti
 Compare a downloaded file's hash against the matching line in the same Release, replacing the example version:
 
 ```powershell
-Get-FileHash .\ChashmYar_2.4.4_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\ChashmYar_2.4.7_x64-setup.exe -Algorithm SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
-A hash checks consistency with that manifest, **not publisher identity**. Default builds are unsigned and may trigger SmartScreen. Download from a trusted source and follow your organization's security policy.
+A hash checks consistency with that manifest, **not publisher identity**. Tauri updater signatures are distinct from Windows Authenticode publisher certificates; builds without the latter may trigger SmartScreen. Download from a trusted source and follow your organization's security policy.
 
 ## Features and defaults
 
 - Work/break timer, start/pause, snooze, short exercises, break guidance and a floating/docked timer widget.
 - Color temperature, software brightness, a night schedule and a color-safe application list.
+- Experimental opt-in full-screen deutan, protan and tritan recolouring with adjustable strength. Results vary and some colours may become harder to distinguish; this is not a treatment. See [the Persian guide](docs/COLOR_VISION_FA.md) for interactions and limitations.
 - Two explainable indicators based on recorded timer outcomes; no invented score when there is insufficient data.
 - Fresh installs request Windows autostart after the first launch and enable automatic timer start, the night schedule and exercises. These options are configurable and previously stored choices are retained.
 - Alert, short-exercise, break and penalty sounds are **off** on fresh installs. Enable them in System → Play alert sounds. Visual notifications remain enabled; an explicitly stored previous sound preference is preserved.
+- Automatically checks and downloads signed updates from `diswebir/chashmyar`; installation and restart require explicit approval for both installer and portable builds. Older versions without the updater require an initial manual upgrade.
 - Bilingual UI, local settings and analytics, light/dark appearance and system tray controls.
 
-**Safety and limitations:** This is not a medical device; scores do not establish eye health, concentration or exercise completion. Gamma depends on hardware, drivers and HDR, and resetting it may not restore a previous custom calibration. Software brightness uses an overlay: capture exclusion and eliminating every popup flash cannot be guaranteed. Test the behavior on your own device.
+**Safety and limitations:** This is not a medical device; scores do not establish eye health, concentration or exercise completion. Gamma depends on hardware, drivers and HDR, and resetting it may not restore a previous custom calibration. Software brightness uses an overlay: capture exclusion and eliminating every popup flash cannot be guaranteed. Colour-vision recolouring can conflict with Magnifier or other effects; its Windows behavior and restoration have not yet been tested on a real Windows machine. Test the behavior on your own device.
 
 When enabled, emergency exit during a strict break requires holding **Ctrl and Shift** together for the configured duration; U is not needed. Save work and test strict mode in a safe environment first. An ordinary Windows app cannot block Ctrl+Alt+Del. See the [user guide](docs/USER_GUIDE_FA.md) for details.
 
 ## For repository owners: build with GitHub
 
-**This is source code; no newly built executable is included.** Each push to `main` requests an automatic patch release: the workflow allocates a version, builds Windows x64 and, if its checks pass, **publishes a Release without manual approval**. The separate `CI` workflow also runs, but its result is not a dependency of the release workflow.
+**This is source code; no newly built executable is included.** Before pushing, configure your own signing key in GitHub as described in [CI and release](docs/CI_AND_RELEASE.md) and the [Persian key guide](docs/UPDATER_SIGNING_FA.md); the release fails closed if it is missing. Each push to `main` requests an automatic patch release: the workflow allocates a version, builds Windows x64 and, if its checks pass, **publishes a Release without manual approval**. The separate `CI` workflow also runs, but its result is not a dependency of the release workflow.
 
-The source baseline is `2.4.3`; in a new repository without higher stable tags, the first successful release is normally `v2.4.4`. Older 2.4.3 executables do not contain the new logo. GitHub execution and real Windows behavior have not yet been confirmed for this source in your repository. Permissions, failed checks and queue limits can prevent publication.
+The source baseline is `2.4.7`. If all existing stable tags are lower, the first successful release is `v2.4.7` and the next successful source commit normally produces `v2.4.8`. An equal or higher stable tag instead causes allocation of the patch after the highest tag; no existing tag is overwritten. Older 2.4.3 executables contain neither the new logo nor the colour-vision feature. GitHub execution and real Windows behavior have not yet been confirmed for this source. Permissions, failed checks and queue limits can prevent publication.
 
 Read [CI and release](docs/CI_AND_RELEASE.md) for exact setup, artifacts and recovery. The [Persian GitHub quickstart](docs/GITHUB_QUICKSTART_FA.md) walks through the first upload. Do not omit `.github`, lockfiles, tests or the vendored Tao patch.
 
 ## Data and privacy
 
-Settings and analytics are normally stored in `%APPDATA%\com.chashmyar.desktop\`; diagnostics are normally in `%LOCALAPPDATA%\ChashmYar\startup.log`. Stop the app before backing up its data, and review logs for personal paths before sharing. The current code has no remote analytics-upload service. The color-safe watcher reads active process names and window titles locally; the separate overlay listener reacts to event types and window handles without reading titles or keystrokes. The creator link opens the system browser; the installer can download WebView2. See [architecture and data](docs/ARCHITECTURE.md).
+Settings and analytics are normally stored in `%APPDATA%\com.chashmyar.desktop\`; diagnostics are normally in `%LOCALAPPDATA%\ChashmYar\startup.log`. Stop the app before backing up its data, and review logs for personal paths before sharing. The current code has no remote analytics-upload service. The color-safe watcher reads active process names and window titles locally; the separate overlay listener reacts to event types and window handles without reading titles or keystrokes. The updater contacts GitHub to check and download releases; the creator link opens the system browser, and the installer can download WebView2. See [architecture and data](docs/ARCHITECTURE.md).
 
 ## Development and documentation
 
-Windows development requires Node.js, Rust/MSVC, the C++ tools and WebView2. They are **not** required locally just to push this source for GitHub to build. See [development and tests](docs/DEVELOPMENT.md), [architecture](docs/ARCHITECTURE.md), [branding](assets/branding/README.md), [changelog](CHANGELOG.md), [contributing](CONTRIBUTING.md) and [security](SECURITY.md).
+Windows development requires Node.js, Rust/MSVC, the C++ tools and WebView2. A local app build is **not** required to push the source for GitHub to build; generating the signing key locally does require Node.js/npx once. See [development and tests](docs/DEVELOPMENT.md), [architecture](docs/ARCHITECTURE.md), [branding](assets/branding/README.md), [changelog](CHANGELOG.md), [contributing](CONTRIBUTING.md) and [security](SECURITY.md).
 
 The project's source is [MIT licensed](LICENSE); third-party components retain their own licenses: [notices](THIRD_PARTY_NOTICES.txt). Created by Reza Jantrani — [disweb.ir](https://disweb.ir/).

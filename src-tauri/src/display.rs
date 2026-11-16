@@ -341,6 +341,8 @@ pub fn install_panic_hook() {
         let previous = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
             crate::diag::log(format!("PANIC: {info}"));
+            // Non-blocking: a panic may have happened on the colour worker.
+            crate::color_filter::panic_stop();
             GAMMA_STOPPED.store(true, Ordering::SeqCst);
             GAMMA_CONFIG.store(gamma_config(NEUTRAL_KELVIN, 2000), Ordering::SeqCst);
             wake_lerp_worker();

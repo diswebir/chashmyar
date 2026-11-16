@@ -9,9 +9,14 @@ try {
     ['score', 'src-tauri/src/score.rs'],
     ['timer_rules', 'src-tauri/src/timer_rules.rs'],
     ['overlay_policy', 'src-tauri/src/overlay_policy.rs'],
+    ['popup_layer', 'src-tauri/src/popup_layer.rs'],
     ['gamma_logic', 'src-tauri/src/gamma_logic.rs'],
+    ['color_vision', 'src-tauri/src/color_vision.rs'],
+    ['color_filter_worker', 'tests/color-filter-worker.rs'],
     ['coalesced_signal', 'src-tauri/src/coalesced_signal.rs'],
     ['foreground_match', 'src-tauri/src/foreground_match.rs'],
+    ['update_policy', 'src-tauri/src/update_policy.rs'],
+    ['portable_replace', 'src-tauri/src/portable_replace.rs'],
     ['passive_show_policy', 'src-tauri/vendor/tao/src/platform_impl/windows/passive_show_policy.rs'],
   ];
   for (const [name, source] of modules) {

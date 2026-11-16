@@ -38,22 +38,25 @@ The browser preview uses localStorage and simulated IPC; it is useful for visual
 
 ## Build on Windows
 
+A local build is optional; the source bundle itself contains no new executable. For a signed updater build, set `CHASHMYAR_UPDATER_PUBLIC_KEY` and `TAURI_SIGNING_PRIVATE_KEY` to the **contents** of the matching key files and, if used, set `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in the process environment. Keep keys outside the repository and never put passwords in shell history. See the [key guide](UPDATER_SIGNING_FA.md). Then:
+
 ```powershell
 npm run version:check
 npm run build:win
 npm run verify:exe
 npm run licenses:generate
+npm run release:sign
 npm run release:stage
 ```
 
-Alternatively run `powershell -ExecutionPolicy Bypass -File .\build-windows.ps1` from the repository. The script checks prerequisites and runs the build/staging commands. `release/windows/` contains versioned local executables and `release/staging/` contains the current release pair, `LICENSE`, `THIRD_PARTY_NOTICES.txt` and a SHA-256 manifest. Both directories are ignored by Git. The release installer uses a 32-bit NSIS stub containing the x64 app; the portable app is x64.
+Alternatively run `powershell -ExecutionPolicy Bypass -File .\build-windows.ps1` after configuring that environment. The script checks prerequisites and runs build/sign/staging. `release/windows/` contains versioned local executables; `release/staging/` also contains both updater signatures, `latest.json`, license notices and checksums. Both directories are ignored by Git. The installer uses a 32-bit NSIS stub containing the x64 app; the portable app is x64. Clear signing environment variables after use.
 
-The installer downloads the WebView2 bootstrapper when needed, so installation may require network access. Builds are **unsigned by default**. Signing requires a separately managed certificate and secure CI configuration; this repository does not claim to have one. `npm run verify:exe` checks PE headers and hashes, not the application's behavior or a publisher signature.
+The installer can download WebView2 when needed. Tauri updater signatures verify update payloads but are **not** Windows Authenticode publisher signatures; absent a separately managed publisher certificate, SmartScreen can still warn. `npm run verify:exe` checks PE headers and hashes, not native behavior or publisher identity.
 
 ## Tests
 
 ```powershell
-npm run test:logic      # pure Rust policies, timed interpolation, parked worker signal
+npm run test:logic      # Rust policies; Windows also runs small native HWND/swap smoke tests
 npm run test:windows-policy # source-integrity checks, not an interactive Windows test
 npm run test:compat     # saved data; on non-Windows also a fake-driver worker/shutdown test
 npm run test:release    # version, checksums and auto-release tests with local Git + fake gh
@@ -65,9 +68,9 @@ npx playwright install chromium
 npm run test:ui:all     # starts and stops a temporary local production preview
 ```
 
-`test:ui:all` runs the smoke, v2.3/v2.4 regression/stress, sound-default, creator-card, branding UI and weekly-chart tooltip suites using Playwright and mock IPC. The chart suite checks tooltip contrast and hovered values in light/dark themes and both languages. The branding suite checks that the header and favicon load in both themes/languages at two viewport sizes. The sound suite uses a fake audio context and a Tauri event stub; it verifies the toggle, saved values and chime routing, not real sound output. The runner picks a free localhost port and tears down the preview afterward. Alternatively, start `npm run dev` and run `npm run test:ui`, `npm run test:ui:v23`, `npm run test:ui:v24`, `npm run test:sound`, `npm run test:credits`, `npm run test:branding:ui` or `npm run test:chart` individually; set `CHASHMYAR_TEST_URL` if needed. On a Linux CI host use `npx playwright install --with-deps chromium` if system libraries are missing.
+`test:ui:all` runs the smoke, v2.3/v2.4 regression/stress, sound-default, creator-card, branding UI, weekly-chart tooltip, updater UI and colour-vision UI suites using Playwright and mock IPC. The colour-vision suite covers opt-in settings, selection, persistence, Color-Safe, conflict/retry and both languages; it does not change a display. The chart suite checks tooltip contrast and hovered values in light/dark themes and both languages. The branding suite checks that the header and favicon load in both themes/languages at two viewport sizes. The sound suite uses a fake audio context and a Tauri event stub; it verifies the toggle, saved values and chime routing, not real sound output. The runner picks a free localhost port and tears down the preview afterward. Alternatively, start `npm run dev` and run `npm run test:ui`, `npm run test:ui:v23`, `npm run test:ui:v24`, `npm run test:sound`, `npm run test:credits`, `npm run test:branding:ui` or `npm run test:chart` individually; set `CHASHMYAR_TEST_URL` if needed. On a Linux CI host use `npx playwright install --with-deps chromium` if system libraries are missing.
 
-The browser tests do **not** exercise WebView2, native keyboard/WinEvent hooks, real gamma, installer execution or system tray. The Linux/macOS fake-driver test exercises the actual gamma worker and a shutdown race, but not a Windows GPU. The Windows source-policy and pure overlay-policy tests check control flow, event classification and burst scheduling, not foreground behavior, WebView2 button interaction, native hook delivery, popup latency or capture. Since a `main` push publishes automatically after CI checks, run the Windows acceptance checklist in the [release guide](RELEASE_GUIDE_FA.md) before pushing when practical; it is not a release gate. Avoid trying strict lock while unsaved work is open. The `--self-test` option is supplementary and writes to `%LOCALAPPDATA%\ChashmYar\startup.log`.
+The browser tests do **not** exercise WebView2, native keyboard/WinEvent hooks, real gamma, Magnification, installer execution or system tray. Fake-driver tests exercise the actual colour-vision worker on all test hosts and the gamma worker on Linux/macOS, including shutdown races, but not a Windows GPU or physical display. The source-policy and overlay-policy tests check control flow, event classification and burst scheduling. On Windows the small `test:logic` native HWND and running-image swap smoke tests also run; foreground activation can be skipped by session policy. Neither those tests nor the browser mock prove WebView2 button interaction, zero-frame popup behavior, real installer/portable restart, native hook delivery or capture. Since a `main` push publishes automatically after CI checks, run the Windows acceptance checklist in the [release guide](RELEASE_GUIDE_FA.md) before pushing when practical; it is not a release gate. Avoid trying strict lock while unsaved work is open. The `--self-test` option is supplementary and writes to `%LOCALAPPDATA%\ChashmYar\startup.log`.
 
 ## Versioning
 
@@ -77,7 +80,7 @@ node scripts/version.mjs check
 # node scripts/version.mjs set 2.5.0
 ```
 
-The automatic workflow computes a patch after the greater of the source baseline and existing stable tags; it applies the version to a tag-only commit, not to `main`. For example a `2.4.3` baseline with no newer tags yields `v2.4.4`. A deliberate `2.5.0` baseline yields at least `v2.5.1`. Do not bump or tag manually for normal pushes. `set` synchronizes the npm package and lockfile, Tauri config, Cargo manifest and the application's entry in Cargo.lock; edit `CHANGELOG.md` separately. `node scripts/version.mjs check --tag vX.Y.Z` succeeds on the matching release-tag checkout, not necessarily on baseline `main`. See [the Persian release guide](RELEASE_GUIDE_FA.md) for limits and recovery.
+The automatic workflow uses the source baseline itself if it is greater than all existing stable tags; otherwise it allocates the patch after the greatest stable tag. It applies the version to a tag-only child commit, not to `main`; the child may have an unchanged tree when the source already contains the selected version. For example, baseline `2.4.7` with latest tag `v2.4.6` yields `v2.4.7`, then `v2.4.8`. A deliberate `2.5.0` baseline yields `v2.5.0` when all existing stable tags are lower. Do not bump or tag manually for normal pushes. `set` synchronizes the npm package and lockfile, Tauri config, Cargo manifest and the application's entry in Cargo.lock; edit `CHANGELOG.md` separately. `node scripts/version.mjs check --tag vX.Y.Z` succeeds on the matching release-tag checkout, not necessarily on baseline `main`. See [the Persian release guide](RELEASE_GUIDE_FA.md) for limits and recovery.
 
 ## Dependencies and notices
 

@@ -1,6 +1,6 @@
 //! Multi-window topology.
 //!
-//! Five windows, one React bundle (`index.html`), routed by Tauri window label:
+//! Seven windows, one React bundle (`index.html`), routed by Tauri window label:
 //!
 //! | label            | role                                                  |
 //! |------------------|-------------------------------------------------------|
@@ -9,6 +9,8 @@
 //! | `micro-bar`      | 2px progress strip pinned to the top edge              |
 //! | `snooze-alert`   | 30-second pre-break OSD                                |
 //! | `break-lock`     | fullscreen glassmorphic break lock screen              |
+//! | `micro-break`    | non-blocking eye-exercise coach                       |
+//! | `update-alert`   | passive notice when a verified update is ready        |
 
 use tauri::{
     AppHandle, LogicalPosition, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
@@ -21,6 +23,7 @@ pub const MICRO: &str = "micro-bar";
 pub const SNOOZE: &str = "snooze-alert";
 pub const LOCK: &str = "break-lock";
 pub const MICRO_BREAK: &str = "micro-break";
+pub const UPDATE_ALERT: &str = "update-alert";
 
 /// Height of the collapsed micro bar (logical pixels). The window only ever
 /// occupies this thin strip while idle so every other click reaches the desktop.
@@ -181,6 +184,7 @@ pub fn create_all(app: &AppHandle) -> tauri::Result<()> {
     );
     if let Some(w) = &snooze {
         let _ = w.set_ignore_cursor_events(false);
+        protect_notification_layer(app, w);
     }
 
     /* ------------------------------- break lock ---------------------------- */
@@ -236,6 +240,32 @@ pub fn create_all(app: &AppHandle) -> tauri::Result<()> {
     );
     if let Some(w) = &coach {
         let _ = w.set_ignore_cursor_events(false);
+        protect_notification_layer(app, w);
+    }
+
+    // Passive update notice: also works for portable apps without installing
+    // a Windows notification shortcut, and never steals the foreground.
+    let update_notice = build_window!(
+        UPDATE_ALERT,
+        WebviewWindowBuilder::new(app, UPDATE_ALERT, app_url())
+            .title("ChashmYar Update")
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
+            .closable(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .visible(false)
+            .position(monitor.x + monitor.width - 448.0, monitor.y + monitor.height - 190.0)
+            .inner_size(430.0, 146.0)
+    );
+    if let Some(w) = &update_notice {
+        let _ = w.set_ignore_cursor_events(false);
+        protect_notification_layer(app, w);
     }
 
     Ok(())
@@ -244,6 +274,23 @@ pub fn create_all(app: &AppHandle) -> tauri::Result<()> {
 /* -------------------------------------------------------------------------- */
 /*                  Capture-safe and system-wide dimmer layer                 */
 /* -------------------------------------------------------------------------- */
+
+/// Subclass only our own notification windows on their GUI thread. Their
+/// normal Tao show/hide state and mouse/keyboard focus behavior stay intact.
+#[cfg(windows)]
+fn protect_notification_layer(app: &AppHandle, window: &WebviewWindow) {
+    let raw = match window.hwnd() {
+        Ok(hwnd) => hwnd.0 as isize,
+        Err(err) => { crate::diag::log(format!("notification HWND unavailable: {err}")); return; }
+    };
+    if let Err(err) = app.run_on_main_thread(move || {
+        if let Err(err) = crate::popup_layer::install_on_window_thread(raw) {
+            crate::diag::log(format!("notification Z-order protection unavailable: {err}"));
+        }
+    }) { crate::diag::log(format!("cannot schedule notification Z-order protection: {err}")); }
+}
+#[cfg(not(windows))]
+fn protect_notification_layer(_app: &AppHandle, _window: &WebviewWindow) {}
 
 use std::sync::atomic::{AtomicBool, Ordering};
 static CAPTURE_EXCLUDED: AtomicBool = AtomicBool::new(false);
@@ -285,6 +332,7 @@ fn register_overlay(w: &WebviewWindow) {
         Err(err) => { crate::diag::log(format!("dimmer HWND unavailable: {err}")); return; }
     };
     OVERLAY_HWND.store(hwnd.0 as isize, Ordering::Release);
+    crate::popup_layer::set_filter_handle(hwnd.0 as isize);
     if !can_exclude_from_capture() {
         crate::diag::log("dimmer capture exclusion unavailable: Windows 10 2004 or later required");
         return;
@@ -311,6 +359,8 @@ fn register_overlay(_w: &WebviewWindow) {
 // read names, keystrokes or contents. It stays out-of-context (no injection)
 // and never takes the app runtime mutex or calls synchronous Tauri APIs.
 static OVERLAY_EVENTS_STOPPED: AtomicBool = AtomicBool::new(false);
+// Synchronize the small state publication with shutdown; never held over UI calls.
+static OVERLAY_CONTROL_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 #[cfg(windows)]
 static OVERLAY_EVENTS_STARTED: AtomicBool = AtomicBool::new(false);
 // Publishing/clearing the id and posting WM_QUIT use this tiny private lock.
@@ -464,8 +514,12 @@ fn start_overlay_event_hook() {}
 
 /// Ask the listener to unhook on its own thread before the application exits.
 pub fn stop_overlay_event_hook() {
-    OVERLAY_EVENTS_STOPPED.store(true, Ordering::Release);
-    OVERLAY_TARGET.store(false, Ordering::Release);
+    {
+        let _control = OVERLAY_CONTROL_LOCK.lock();
+        OVERLAY_EVENTS_STOPPED.store(true, Ordering::Release);
+        OVERLAY_TARGET.store(false, Ordering::Release);
+        crate::popup_layer::set_filter_enabled(false);
+    }
     wake_overlay_worker();
     #[cfg(windows)]
     {
@@ -602,7 +656,25 @@ pub fn hide(app: &AppHandle, label: &str) {
     }
 }
 
+// Serialize update notices against the strict-break window. A notification
+// must never cover the lock or create an escape route during a break.
+static UPDATE_NOTICE_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+pub fn show_update_notice(app: &AppHandle) -> bool {
+    let _guard = UPDATE_NOTICE_LOCK.lock();
+    if let Some(shared) = app.try_state::<crate::engine::Shared>() {
+        if matches!(shared.lock().timer.phase, crate::state::Phase::Break | crate::state::Phase::LongBreak) { return false; }
+    }
+    if let Some(w) = get(app, UPDATE_ALERT) {
+        let monitor = primary_monitor(app);
+        let _ = w.set_position(LogicalPosition::new(monitor.x + monitor.width - 448.0, monitor.y + monitor.height - 190.0));
+        w.show().is_ok()
+    } else { false }
+}
+
 pub fn show_lock(app: &AppHandle) -> bool {
+    let _notice_guard = UPDATE_NOTICE_LOCK.lock();
+    hide(app, UPDATE_ALERT);
     let monitor = primary_monitor(app);
     if let Some(w) = get(app, LOCK) {
         let _ = w.set_position(LogicalPosition::new(monitor.x, monitor.y));
@@ -640,8 +712,9 @@ fn show_snooze_inner(app: &AppHandle) {
             monitor.x + monitor.width - SNOOZE_WIDTH - 18.0,
             monitor.y + 14.0,
         ));
+        // Builder already sets topmost. Do not re-promote after showing: the
+        // notification-layer subclass keeps this below the active filter.
         let _ = w.show();
-        let _ = w.set_always_on_top(true);
     }
 }
 
@@ -671,8 +744,10 @@ static OVERLAY_TARGET: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 static OVERLAY_WORKER_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn set_overlay_target(visible: bool) {
-    if !OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire)
-        && OVERLAY_TARGET.swap(visible, Ordering::AcqRel) != visible {
+    let _control = OVERLAY_CONTROL_LOCK.lock();
+    if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) { return; }
+    crate::popup_layer::set_filter_enabled(visible);
+    if OVERLAY_TARGET.swap(visible, Ordering::AcqRel) != visible {
         // Durable unpark also covers a state change just before the worker parks.
         wake_overlay_worker();
     }
@@ -948,7 +1023,6 @@ fn show_micro_break_inner(app: &AppHandle) {
         ));
         let _ = w.set_size(LogicalSize::new(MICRO_BREAK_WIDTH, MICRO_BREAK_HEIGHT));
         let _ = w.show();
-        let _ = w.set_always_on_top(true);
     }
 }
 
