@@ -78,8 +78,10 @@ export interface SystemSettings {
   /** v2.1 — appearance */
   theme: Theme;
   language: Language;
-  /** v2.1 — hover-intent delay of the docked strip (ms) */
+  /** Hover-intent delay of the docked strip (ms). */
   widgetHoverDelayMs: number;
+  /** Internal one-time migration marker; not a user-facing setting. */
+  widgetHoverDelayRevision: number;
 }
 
 export interface Settings {
@@ -237,7 +239,8 @@ export const DEFAULT_SETTINGS: Settings = {
     widgetPositionSet: false,
     theme: "light",
     language: "fa",
-    widgetHoverDelayMs: 300,
+    widgetHoverDelayMs: 2000,
+    widgetHoverDelayRevision: 1,
   },
 };
 

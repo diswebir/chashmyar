@@ -1,6 +1,11 @@
 #[path = "../../../src-tauri/src/analytics_record.rs"]
 mod analytics_record;
 
+// Compile the real native payload-audit hash helper with the production sha2.
+#[cfg(test)]
+#[path = "../../../src-tauri/src/release_hash.rs"]
+mod release_hash;
+
 // Compile the real settings implementation against small platform stubs. This
 // tests deserialization and defaults without launching Tauri or a Windows UI.
 #[cfg(test)]
@@ -37,6 +42,41 @@ mod tests {
         assert!(settings.system.autostart && settings.system.auto_start_timer_on_launch);
         assert!(settings.system.eye_care_on_launch && settings.system.minimize_to_tray);
         assert!(!settings.system.sound_enabled, "fresh installations are silent");
+        assert_eq!(settings.system.widget_hover_delay_ms, 2000);
+        assert_eq!(settings.system.widget_hover_delay_revision, 1);
+    }
+
+    #[test]
+    fn widget_hover_migration_is_once_and_does_not_touch_other_preferences() {
+        for previous in [0, 100, 300, 650, 1200] {
+            let old = json!({
+                "system": {"widgetHoverDelayMs": previous, "soundEnabled": true, "autostart": false},
+                "eye": {"kelvin": 3200},
+                "timer": {"workMinutes": 33}
+            });
+            let mut settings: super::state::Settings = serde_json::from_value(old).unwrap();
+            assert_eq!(settings.system.widget_hover_delay_revision, 0, "missing marker denotes an old installation");
+            settings.system.migrate_widget_hover_delay();
+            assert_eq!(settings.system.widget_hover_delay_ms, 2000);
+            assert_eq!(settings.system.widget_hover_delay_revision, 1);
+            assert!(settings.system.sound_enabled && !settings.system.autostart);
+            assert_eq!(settings.eye.kelvin, 3200);
+            assert_eq!(settings.timer.work_minutes, 33);
+            settings.system.widget_hover_delay_ms = 650; // deliberate new choice
+            let saved = serde_json::to_value(settings).unwrap();
+            let mut reloaded: super::state::Settings = serde_json::from_value(saved).unwrap();
+            reloaded.system.migrate_widget_hover_delay();
+            assert_eq!(reloaded.system.widget_hover_delay_ms, 650, "migration never repeats after an edit");
+            assert_eq!(reloaded.system.widget_hover_delay_revision, 1);
+        }
+        let mut missing_group: super::state::Settings = serde_json::from_value(json!({})).unwrap();
+        missing_group.system.migrate_widget_hover_delay();
+        assert_eq!(missing_group.system.widget_hover_delay_ms, 2000);
+        let mut out_of_range: super::state::Settings = serde_json::from_value(
+            json!({"system": {"widgetHoverDelayMs": 6000, "widgetHoverDelayRevision": 1}})
+        ).unwrap();
+        out_of_range.system.migrate_widget_hover_delay();
+        assert_eq!(out_of_range.system.widget_hover_delay_ms, 5000);
     }
 
     #[test]

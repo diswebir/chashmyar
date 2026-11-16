@@ -160,7 +160,7 @@ async fn check_and_download(app: AppHandle) {
     }
     publish(&app);
 
-    // 2.13.3 does not copy the builder timeout into Update::timeout.
+    // The pinned updater does not copy the builder timeout into Update::timeout.
     update.timeout = Some(Duration::from_secs(180));
     let progress_app = app.clone();
     let mut transferred = 0u64;
@@ -309,15 +309,15 @@ pub fn install_ready_update(app: AppHandle) -> Result<(), String> {
         #[cfg(not(all(windows, feature = "portable")))]
         { let _ = ready; return Err("unsupported".into()); }
     }
-    // These are the exact in-memory bytes returned by Update::download above.
-    // Updater 2.13.3's install() does not re-verify arbitrary input, so never
-    // load bytes or a signature from a webview, temp file, or separate IPC.
+    // Only pass the in-memory bytes returned by Update::download above. The
+    // pinned 2.14.1 updater also re-verifies them in install(); never accept
+    // bytes or a signature from a webview, temp file, or separate IPC.
     match ready.update.install(&ready.bytes) {
         Ok(()) => Ok(()), // Windows normally exits in the plugin instead.
         Err(e) => {
             crate::diag::log(format!("installer launch failed: {e}"));
             if ready.shutdown_started.load(Ordering::Acquire) {
-                // Tauri 2.13.3 invokes the callback before ShellExecuteW, not
+                // Tauri 2.14.1 invokes the callback before ShellExecuteW, not
                 // after it. Once cleanup_before_exit has run, its documented
                 // contract forbids further Tauri API use. An OS dialog remains
                 // visible even though all webviews have been hidden, then exit.

@@ -7,7 +7,6 @@
 //! extracted from the staged NSIS installer. It is not a WebView2 GUI test.
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, fs::OpenOptions, io::Write, path::Path};
 use tauri::utils::assets::AssetKey;
 
@@ -68,7 +67,7 @@ fn inspect() -> Report {
             if bytes.is_empty() {
                 return Err(format!("Embedded asset is empty: {path}"));
             }
-            let digest = format!("{:x}", Sha256::digest(bytes.as_ref()));
+            let digest = crate::release_hash::sha256_hex(bytes.as_ref());
             if report.assets.insert(path.clone(), digest).is_some() {
                 return Err(format!("Duplicate embedded asset: {path}"));
             }

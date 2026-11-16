@@ -59,5 +59,21 @@ try {
   ok(main.indexOf('release_payload::handle_command') < main.indexOf('portable_replace::wait_before_startup'), 'audit runs before portable update and GUI startup');
   ok(lib.includes('.build(app_context())') && lib.includes('!tauri::is_dev()'), 'GUI and audit share a context and release builds fail closed');
   ok(workflow.indexOf('npm run verify:payload') > workflow.indexOf('node scripts/stage-release.mjs') && workflow.indexOf('npm run verify:payload') < workflow.indexOf('Upload verified build'), 'staged payloads are audited before upload');
+  const nativeAudit = readFileSync('src-tauri/src/release_payload.rs', 'utf8');
+  const compat = readFileSync('tests/rust-compat/src/lib.rs', 'utf8');
+  ok(lib.includes('mod release_hash;') && nativeAudit.includes('crate::release_hash::sha256_hex(') && compat.includes('src-tauri/src/release_hash.rs'), 'compat tests compile the real hash helper used by the native audit');
+  const appSpec = /^sha2\s*=\s*"([^"]+)"/m.exec(readFileSync('src-tauri/Cargo.toml', 'utf8'))?.[1];
+  const testSpec = /^sha2\s*=\s*"([^"]+)"/m.exec(readFileSync('tests/rust-compat/Cargo.toml', 'utf8'))?.[1];
+  ok(Boolean(appSpec) && appSpec === testSpec, 'application and hash regression test use the same sha2 constraint');
+  const lockedDirectSha2 = (lock, packageName) => {
+    const block = lock.split(/\r?\n\r?\n/).find((s) => s.startsWith(`[[package]]\nname = "${packageName}"`) || s.startsWith(`[[package]]\r\nname = "${packageName}"`));
+    const ref = /^\s*"sha2(?: ([^"]+))?",?\s*$/m.exec(block || '');
+    const versions = [...lock.matchAll(/\[\[package\]\]\r?\nname = "sha2"\r?\nversion = "([^"]+)"/g)].map((m) => m[1]);
+    if (!ref) return undefined;
+    return ref[1] && versions.includes(ref[1]) ? ref[1] : !ref[1] && versions.length === 1 ? versions[0] : undefined;
+  };
+  const appSha2 = lockedDirectSha2(readFileSync('src-tauri/Cargo.lock', 'utf8'), 'chashmyar');
+  const testSha2 = lockedDirectSha2(readFileSync('tests/rust-compat/Cargo.lock', 'utf8'), 'chashmyar-compat-tests');
+  ok(Boolean(appSha2) && appSha2 === testSha2, 'application and hash regression test lock the same sha2 version');
   console.log(`PASS: ${checks} release payload/negative-regression assertions (synthetic fixtures).`);
 } finally { rmSync(dir, { recursive: true, force: true }); }

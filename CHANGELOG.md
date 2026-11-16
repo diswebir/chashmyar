@@ -2,13 +2,25 @@
 
 Changes to the application are recorded here. Version headers describe source baselines; automatic release tags may differ when newer tags already exist.
 
+## 2.4.9 — source baseline
+
+### Widget
+- The docked top-edge menu opens after two seconds of continuous hover by default. Leaving the sensor early cancels the timer; entering it again starts a full new delay. The menu can still be traversed without closing until the pointer leaves the expanded window.
+- Migrate every old saved widget-hover delay to 2000 ms once while retaining all other preferences. Users can then choose 0–5000 ms in System; the newly chosen value persists and is not reset again. Floating mode remains available. Browser/mock and host migration tests do not substitute for native WebView2 pointer/geometry testing.
+
+### Dependencies and CI
+- Updated Framer Motion to 14.14.0, Lucide React to 1.73.0, `sha2` to 0.11.1, the exact reviewed `tauri-plugin-updater` pin to 2.14.1 and the Tauri Store lock to 2.5.1; regenerated the Windows-target third-party inventory. This addresses stale notices in the shown dependency PRs and the updater's old exact-version policy. Tauri Store 2.5.1 reports a fix for a store-lock deadlock.
+- Adapted the native release-audit SHA-256 formatting to the `sha2` 0.11 API. Host tests compile the real hash helper with the same locked dependency and check known vectors, so an incompatible digest-formatting change cannot slip through source-only checks. Dependabot groups compatible `sha2` version proposals across the app and test lockfiles; security updates or incompatible constraints can still require manual synchronization.
+- The updater plugin's verification and Windows installer callback changes were reviewed against 2.13.3; 2.14.1 also verifies bytes at `install()`. The application retains its mandatory signed-version policy, same-key requirement and explicit installation confirmation. Actual old-to-new Windows updating still requires manual validation.
+- Run the license inventory in a separate read-only CI job, so an outdated notice no longer skips browser tests and other failures do not suppress the candidate artifact. A maintainer must still review and commit changed notices; CI does not write to PR branches or receive release secrets. See [the Persian release and update-test guide](UPDATE_2.4.9_FA.md).
+
 ## 2.4.8 — corrected source baseline
 
 ### Fixed
 - Fixed the 2.4.7 portable production build: both flavors now use Tauri CLI so `tauri/custom-protocol` is enabled and the frontend is embedded. Release-mode compilation refuses a development-protocol build.
 - Added a mandatory headless audit of the actual staged portable EXE and the application extracted from the actual staged NSIS installer. It compares all embedded asset hashes with `dist` and checks protocol, version, flavor and updater public key. It does not execute an interactive WebView2 session.
 - Grouped Vite and React-plugin version proposals, avoided a Vite 8 minifier incompatibility, deferred the breaking Tailwind major migration, and added reviewable notice artifacts for failed dependency PRs without making the notice check optional. See [the Persian fix guide](FIX_2.4.8_FA.md).
-- Preserve the signing-key workflow and no-overwrite automatic patch allocation; retain the existing key when upgrading. Real GitHub execution of this corrected workflow and interactive Windows acceptance tests remain necessary.
+- Preserve the signing-key workflow and no-overwrite automatic patch allocation; retain the existing key when upgrading. GitHub later published 2.4.8 successfully; interactive Windows acceptance tests still remain necessary.
 
 ## 2.4.7 — published source baseline
 

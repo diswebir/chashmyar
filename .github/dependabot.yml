@@ -19,15 +19,20 @@ updates:
       - dependency-name: "tailwindcss"
         update-types: ["version-update:semver-major"]
   - package-ecosystem: cargo
-    directory: /src-tauri
+    directories:
+      - /src-tauri
+      - /tests/rust-compat
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
-  - package-ecosystem: cargo
-    directory: /tests/rust-compat
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 8
+    # The production payload audit and its real host regression test must use
+    # the same sha2 version. Group compatible version updates across both
+    # directories; security updates may still need a maintainer to sync them.
+    groups:
+      shared-sha2:
+        group-by: dependency-name
+        patterns:
+          - "sha2"
   - package-ecosystem: github-actions
     directory: /
     schedule:

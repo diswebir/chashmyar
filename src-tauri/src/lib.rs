@@ -31,6 +31,7 @@ pub mod locker;
 pub mod overlay_policy;
 pub mod popup_layer;
 pub mod persistence;
+mod release_hash;
 pub mod release_payload;
 pub mod self_test;
 pub mod score;

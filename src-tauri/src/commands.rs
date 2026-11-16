@@ -23,6 +23,7 @@ pub fn get_snapshot(app: AppHandle, shared: State<'_, Shared>) -> Snapshot {
 #[tauri::command(async)]
 pub fn update_settings(app: AppHandle, shared: State<'_, Shared>, mut settings: Settings) -> Snapshot {
     settings.eye.normalize_color_vision();
+    settings.system.migrate_widget_hover_delay();
     let (mode_changed, theme_changed, language_changed);
     {
         let mut rt = shared.lock();
@@ -57,7 +58,7 @@ pub fn patch_settings(app: AppHandle, shared: State<'_, Shared>, patch: serde_js
             let fields = updates.as_object().ok_or("settings section must be an object")?;
             for (key, value) in fields {
                 // Placement and autostart have dedicated commands/side effects.
-                if group == "system" && matches!(key.as_str(), "widgetMode" | "widgetX" | "widgetY" | "widgetPositionSet" | "autostart") {
+                if group == "system" && matches!(key.as_str(), "widgetMode" | "widgetX" | "widgetY" | "widgetPositionSet" | "widgetHoverDelayRevision" | "autostart") {
                     return Err(format!("use the dedicated command for {key}"));
                 }
                 if !target.contains_key(key) { return Err(format!("unknown setting: {group}.{key}")); }
@@ -80,7 +81,7 @@ pub fn patch_settings(app: AppHandle, shared: State<'_, Shared>, patch: serde_js
         next.lock.emergency_hold_seconds = next.lock.emergency_hold_seconds.clamp(2, 30);
         next.lock.rotate_seconds = next.lock.rotate_seconds.clamp(10, 300);
         next.lock.focus_penalty_seconds = next.lock.focus_penalty_seconds.clamp(5, 300);
-        next.system.widget_hover_delay_ms = next.system.widget_hover_delay_ms.min(1500);
+        next.system.widget_hover_delay_ms = next.system.widget_hover_delay_ms.min(5000);
         theme_changed = next.system.theme != rt.settings.system.theme;
         language_changed = next.system.language != rt.settings.system.language;
         rt.settings = next;

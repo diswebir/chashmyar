@@ -48,13 +48,39 @@ jobs:
         run: npm run test:compat
       - name: Test release safety (offline GitHub simulation)
         run: npm run test:release
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser and mock-IPC suites
+        run: npm run test:ui:all
+
+  # Independent jobs let browser checks finish even when an updated dependency
+  # requires a notice refresh, and let the candidate be generated even when
+  # another check fails. Both jobs are read-only and receive no release secrets.
+  notices:
+    name: Third-party license notices
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Rust stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - name: Install dependencies for inventory
+        run: npm ci --ignore-scripts
       - name: Verify third-party notices
         id: notices
         run: npm run licenses:check
-      # A Dependabot PR that changes shipped dependencies must include reviewed
-      # notices. Provide the regenerated file as an artifact, but keep the check
-      # failed until a maintainer reviews and commits it. Never grant PRs write
-      # permissions or expose release secrets to perform this operation.
+      # Do not auto-commit or grant Dependabot/fork PRs write permissions.
+      # A maintainer must review the license changes and include the file.
       - name: Generate candidate notices for review
         id: notice_candidate
         if: failure() && steps.notices.outcome == 'failure' && github.event_name == 'pull_request'
@@ -67,7 +93,3 @@ jobs:
           path: THIRD_PARTY_NOTICES.txt
           if-no-files-found: error
           retention-days: 7
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
-      - name: Browser and mock-IPC suites
-        run: npm run test:ui:all

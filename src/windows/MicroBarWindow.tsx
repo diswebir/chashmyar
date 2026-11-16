@@ -11,7 +11,7 @@ import { t } from "../lib/i18n";
  *
  * • **Docked** (default): a 3-pixel strip glued to the top edge of the screen.
  *   Resting the cursor on it for `settings.system.widgetHoverDelayMs`
- *   (default 300 ms, user configurable) opens the pill. The delay is what keeps
+ *   (default 2000 ms, user configurable) opens the pill. The delay is what keeps
  *   "click the maximised browser tab" from being stolen by the widget.
  * • **Floating**: a compact capsule the user drags anywhere. The Rust core
  *   records the position on every native move, so pressing pause, expanding or
@@ -28,13 +28,15 @@ export default function MicroBarWindow() {
   const startBreak = useAppStore((s) => s.startBreak);
 
   const [expanded, setExpanded] = useState(false);
+  const expandedRef = useRef(false);
   const hoverTimer = useRef<number | null>(null);
   const dragging = useRef(false);
 
   /** Hover intent delay, straight from the persisted settings. */
-  const hoverDelay = Math.max(0, Math.min(1500, system.widgetHoverDelayMs ?? 300));
+  const hoverDelay = Math.max(0, Math.min(5000, system.widgetHoverDelayMs ?? 2000));
 
   const setNativeExpanded = async (next: boolean) => {
+    expandedRef.current = next;
     setExpanded(next);
     try {
       await call("set_micro_expanded", { expanded: next });
@@ -69,9 +71,16 @@ export default function MicroBarWindow() {
   }, [isActive]);
 
   /* ------------------------ hover intent (configurable) -------------------- */
+  const cancelHover = () => {
+    if (hoverTimer.current !== null) {
+      window.clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+  };
+
   const handleEnter = () => {
-    if (floating || expanded) return;
-    if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current);
+    if (floating || expandedRef.current) return;
+    cancelHover();
     hoverTimer.current = window.setTimeout(() => {
       hoverTimer.current = null;
       void setNativeExpanded(true);
@@ -79,19 +88,21 @@ export default function MicroBarWindow() {
   };
 
   const handleLeave = () => {
-    if (hoverTimer.current !== null) {
-      window.clearTimeout(hoverTimer.current);
-      hoverTimer.current = null;
-    }
-    if (expanded) void setNativeExpanded(false);
+    cancelHover();
+    if (expandedRef.current) void setNativeExpanded(false);
   };
 
-  useEffect(
-    () => () => {
-      if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current);
-    },
-    [],
-  );
+  // Changing mode while a hover is pending must not later expand the window;
+  // returning to docked mode must also start with a genuinely collapsed pill.
+  useEffect(() => {
+    if (floating) {
+      cancelHover();
+      expandedRef.current = false;
+      setExpanded(false);
+    }
+  }, [floating]);
+
+  useEffect(() => () => cancelHover(), []);
 
   /* --------------------------- drag (floating) ----------------------------- */
   const handleDragStart = async () => {
@@ -179,12 +190,16 @@ export default function MicroBarWindow() {
     <div
       className="fixed inset-x-0 top-0 select-none"
       onMouseLeave={handleLeave}
+      data-testid="docked-widget-root"
+      data-expanded={expanded}
       style={{ height: "100vh" }}
       dir={document.documentElement.dir}
     >
       {/* the hover sensor strip */}
       <div
         onMouseEnter={handleEnter}
+        onMouseLeave={cancelHover}
+        data-testid="docked-widget-sensor"
         className="group relative w-full"
         style={{ height: 3, cursor: "pointer" }}
       >
@@ -217,7 +232,6 @@ export default function MicroBarWindow() {
             animate={{ y: 8, scale: 1 }}
             exit={{ y: -14, scale: 0.98 }}
             transition={{ type: "spring", stiffness: 420, damping: 34 }}
-            onMouseEnter={handleEnter}
             className="widget-surface mx-auto flex w-fit items-center gap-2.5 rounded-2xl border px-3.5 py-2"
             data-testid="docked-widget-popup"
             /* A tight, symmetrical shadow tuned to the pill's own height —

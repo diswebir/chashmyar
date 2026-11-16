@@ -1,6 +1,6 @@
 [package]
 name = "chashmyar"
-version = "2.4.8"
+version = "2.4.9"
 description = "ChashmYar — eye-care, screen dimmer and strict Pomodoro for Windows"
 authors = ["Reza Jantrani and ChashmYar contributors"]
 license = "MIT"
@@ -24,12 +24,14 @@ tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-store = "2"
 tauri-plugin-single-instance = "2"
-# Pin the verifier version: requireSignedVersion and strict minisign validation.
-tauri-plugin-updater = { version = "=2.13.3", default-features = false, features = ["rustls-tls", "system-proxy"] }
+# Exact, reviewed verifier version: requireSignedVersion and strict minisign validation.
+# Update the matching policy test, review upstream verification/Windows install
+# changes and regenerate THIRD_PARTY_NOTICES when bumping this pin.
+tauri-plugin-updater = { version = "=2.14.1", default-features = false, features = ["rustls-tls", "system-proxy"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# Already present in the lockfile through Tauri; used for release-payload audits.
-sha2 = "0.10"
+# Used only for release-payload auditing (Cargo may also lock other sha2 versions).
+sha2 = "0.11"
 parking_lot = "0.12"
 log = "0.4"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }

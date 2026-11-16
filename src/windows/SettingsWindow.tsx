@@ -1256,7 +1256,7 @@ export default function SettingsWindow() {
                         hint={t("مدت مکث ماوس روی نوار بالا پیش از باز شدن ویجت")}
                         value={settings.system.widgetHoverDelayMs}
                         min={0}
-                        max={1200}
+                        max={5000}
                         step={50}
                         format={(v) => `${toLocalDigits(v)} ${t("میلی‌ثانیه")}`}
                         onChange={(v) => void setWidgetHoverDelay(v)}

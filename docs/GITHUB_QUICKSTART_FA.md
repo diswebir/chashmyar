@@ -42,7 +42,7 @@ git status --short
 git add .
 git status --short
 git ls-files -- .github/workflows/release.yml package-lock.json src-tauri/Cargo.lock src-tauri/vendor/tao/CHASHMYAR_PATCH.md src-tauri/icons/icon.ico
-git commit -m "Add signed updates and notification fixes"
+git commit -m "Update widget and dependencies for 2.4.9"
 git push origin main
 ```
 
@@ -58,6 +58,6 @@ git push origin main
 
 ## ۵. نسخه‌ها و خطاها
 
-نسخهٔ پایهٔ سورس `2.4.8` است. اگر بیشترین تگ پایدار هنگام تخصیص `v2.4.7` باشد، انتشار اصلاح‌شده `v2.4.8` خواهد بود. اگر تگ برابر یا بالاتری وجود داشته باشد، شماره یک Patch بعد از بزرگ‌ترین تگ پایدار انتخاب می‌شود؛ تگ قبلی بازنویسی نمی‌شود. `main` نسخهٔ پایه را نگه می‌دارد؛ برای انتشار عادی تگ‌گذاری یا افزایش دستی لازم نیست. برای مشکل پرتابل ۲.۴.۷، [راهنمای اصلاح](../FIX_2.4.8_FA.md) را بخوانید.
+نسخهٔ پایهٔ سورس `2.4.9` است. اگر بیشترین تگ پایدار هنگام تخصیص `v2.4.8` باشد، انتشار بعدی `v2.4.9` خواهد بود. اگر تگ برابر یا بالاتری وجود داشته باشد، شماره یک Patch بعد از بزرگ‌ترین تگ پایدار انتخاب می‌شود؛ تگ قبلی بازنویسی نمی‌شود. `main` نسخهٔ پایه را نگه می‌دارد؛ برای انتشار عادی تگ‌گذاری یا افزایش دستی لازم نیست. برای مشکل پرتابل ۲.۴.۷، [راهنمای اصلاح](../FIX_2.4.8_FA.md) را بخوانید.
 
 برای تغییرات بعدی، ابتدا `main` را با `git pull --ff-only origin main` به‌روز کنید، تغییرات را بازبینی و commit کرده و `git push origin main` بزنید. برای Draft، خطای انتشار یا اجرای قدیمی به [راهنمای بازیابی](RELEASE_GUIDE_FA.md) مراجعه کنید؛ Draft ناتمام را کورکورانه Publish نکنید و دارایی انتشار موجود را بی‌صدا بازنویسی نکنید.

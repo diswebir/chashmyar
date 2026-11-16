@@ -223,6 +223,20 @@ pub struct SystemSettings {
     pub language: Language,
     /// How long the cursor must rest on the docked strip before the pill opens.
     pub widget_hover_delay_ms: u32,
+    /// Version 1 applies the 2-second default once to existing installations.
+    /// An absent field is zero even though a fresh Settings::default() uses 1.
+    #[serde(default)]
+    pub widget_hover_delay_revision: u8,
+}
+
+impl SystemSettings {
+    pub fn migrate_widget_hover_delay(&mut self) {
+        if self.widget_hover_delay_revision == 0 {
+            self.widget_hover_delay_ms = 2000;
+            self.widget_hover_delay_revision = 1;
+        }
+        self.widget_hover_delay_ms = self.widget_hover_delay_ms.min(5000);
+    }
 }
 
 impl Default for SystemSettings {
@@ -239,7 +253,8 @@ impl Default for SystemSettings {
             widget_position_set: false,
             theme: Theme::Light,
             language: Language::Fa,
-            widget_hover_delay_ms: 300,
+            widget_hover_delay_ms: 2000,
+            widget_hover_delay_revision: 1,
         }
     }
 }

@@ -22,6 +22,11 @@ pub fn load(app: &AppHandle) -> Settings {
         if let Some(value) = store.get(KEY) {
             if let Ok(mut settings) = serde_json::from_value::<Settings>(value) {
                 settings.eye.normalize_color_vision();
+                // Existing 2.4.8-and-earlier settings used at most 1.2s. Reset
+                // only this preference once; later edits and all other values
+                // survive subsequent launches. The next settings save persists
+                // the revision alongside the chosen delay.
+                settings.system.migrate_widget_hover_delay();
                 return settings;
             }
         }

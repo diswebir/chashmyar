@@ -79,13 +79,21 @@ function mockInitial(): AppSnapshot {
     const raw = localStorage.getItem(MOCK_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as AppSnapshot;
+      const savedSystem = parsed.settings?.system;
+      const system = { ...DEFAULT_SETTINGS.system, ...savedSystem };
+      // Mirror the native one-time migration for browser/mock previews.
+      if (savedSystem && (savedSystem.widgetHoverDelayRevision ?? 0) === 0) {
+        system.widgetHoverDelayMs = 2000;
+        system.widgetHoverDelayRevision = 1;
+      }
+      system.widgetHoverDelayMs = Math.max(0, Math.min(5000, system.widgetHoverDelayMs));
       return {
         revision: 0,
         settings: {
           eye: { ...DEFAULT_SETTINGS.eye, ...parsed.settings?.eye },
           timer: { ...DEFAULT_SETTINGS.timer, ...parsed.settings?.timer },
           lock: { ...DEFAULT_SETTINGS.lock, ...parsed.settings?.lock },
-          system: { ...DEFAULT_SETTINGS.system, ...parsed.settings?.system },
+          system,
         },
         timer: { ...parsed.timer, running: false, paused: false, idlePaused: false },
         eye: { ...parsed.eye, colorVisionStatus: parsed.eye?.colorVisionStatus ?? "off" },

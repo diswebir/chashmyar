@@ -66,13 +66,6 @@ Source revision: 2799b09c24e6632f8e653c5cd8fc303e85a906ba
 License text: 954f335b8baf5e1a (LICENSE-APACHE)
 License text: 99afaa30c1780120 (LICENSE-MIT)
 
-Cargo: base64 0.22.1
-Declared license: MIT OR Apache-2.0
-Source: https://github.com/marshallpierce/rust-base64
-Source revision: e14400697453bcc85997119b874bc03d9601d0af
-License text: 954f335b8baf5e1a (LICENSE-APACHE)
-License text: 6a8da4c78c729176 (LICENSE-MIT)
-
 Cargo: base64 0.23.1
 Declared license: MIT OR Apache-2.0
 Source: https://github.com/marshallpierce/rust-base64
@@ -114,6 +107,13 @@ Source: https://github.com/RustCrypto/utils
 Source revision: 6d35952d3d3b124bc1049ad6fb406b42b1ce4bfe
 License text: e8541ea93f027a6c (LICENSE-APACHE)
 License text: 5ff5253f2cb9347c (LICENSE-MIT)
+
+Cargo: block-buffer 0.12.1
+Declared license: MIT OR Apache-2.0
+Source: https://github.com/RustCrypto/utils
+Source revision: cbd0963c685df025c42bed31f78c50d1bada3805
+License text: e8541ea93f027a6c (LICENSE-APACHE)
+License text: 775a3e20a9af7160 (LICENSE-MIT)
 
 Cargo: brotli-decompressor 6.3.0
 Declared license: BSD-3-Clause/MIT
@@ -214,6 +214,13 @@ Source: https://github.com/chronotope/chrono
 Source revision: 170338250e836976a211e64728ec956e45e78a39
 License text: ce4a94c006fa5d15 (LICENSE.txt)
 
+Cargo: const-oid 0.10.3
+Declared license: Apache-2.0 OR MIT
+Source: https://github.com/RustCrypto/formats
+Source revision: 3c35e972cd4bbaf72c947364fdb964f8f95c3e9a
+License text: e8541ea93f027a6c (LICENSE-APACHE)
+License text: ea753cf1e3ec3e02 (LICENSE-MIT)
+
 Cargo: cookie 0.18.2
 Declared license: MIT OR Apache-2.0
 Source: https://github.com/SergioBenitez/cookie-rs
@@ -227,6 +234,13 @@ Source: https://github.com/RustCrypto/utils
 Source revision: 9d92d5e95ab4c07c5d8bfd024bf2a17e96d20feb
 License text: e8541ea93f027a6c (LICENSE-APACHE)
 License text: 6334e52844d698f5 (LICENSE-MIT)
+
+Cargo: cpufeatures 0.3.1
+Declared license: MIT OR Apache-2.0
+Source: https://github.com/RustCrypto/utils
+Source revision: e3ac92bfd33051e146025baa2d0ce79891b7fc73
+License text: e8541ea93f027a6c (LICENSE-APACHE)
+License text: ea753cf1e3ec3e02 (LICENSE-MIT)
 
 Cargo: crc32fast 1.5.4
 Declared license: MIT OR Apache-2.0
@@ -256,6 +270,13 @@ Source: https://github.com/RustCrypto/traits
 Source revision: 66a997ccf5776ce873da5a48e2885a9908e940f6
 License text: e8541ea93f027a6c (LICENSE-APACHE)
 License text: 692b1604961dd580 (LICENSE-MIT)
+
+Cargo: crypto-common 0.2.2
+Declared license: MIT OR Apache-2.0
+Source: https://github.com/RustCrypto/traits
+Source revision: 93dee26c6bde3741a197f1c5f6b7baac277705f3
+License text: e8541ea93f027a6c (LICENSE-APACHE)
+License text: dec912e37f888cf7 (LICENSE-MIT)
 
 Cargo: cssparser-macros 0.7.1
 Declared license: MPL-2.0
@@ -340,6 +361,13 @@ Source: https://github.com/RustCrypto/traits
 Source revision: 344389411fd9718a0742435152e933a9e71461ee
 License text: e8541ea93f027a6c (LICENSE-APACHE)
 License text: 9c5127ab88e8f55b (LICENSE-MIT)
+
+Cargo: digest 0.11.3
+Declared license: MIT OR Apache-2.0
+Source: https://github.com/RustCrypto/traits
+Source revision: 2fb9ed8922e244117040bb037a7d141a6a2b8228
+License text: e8541ea93f027a6c (LICENSE-APACHE)
+License text: c8d7f4fd612a2da8 (LICENSE-MIT)
 
 Cargo: dirs-sys 0.5.0
 Declared license: MIT OR Apache-2.0
@@ -612,6 +640,13 @@ Source: https://github.com/seanmonstar/httparse
 Source revision: 9f29e79f9832dbd0ae5220acb17c1866745bdecd
 License text: 954f335b8baf5e1a (LICENSE-APACHE)
 License text: 8502803cebb30a72 (LICENSE-MIT)
+
+Cargo: hybrid-array 0.4.15
+Declared license: MIT OR Apache-2.0
+Source: https://github.com/RustCrypto/hybrid-array
+Source revision: 09310c55b75e2cd408951c7e2e86dba16c63fc68
+License text: e8541ea93f027a6c (LICENSE-APACHE)
+License text: a1aa15c3898d79b7 (LICENSE-MIT)
 
 Cargo: hyper-rustls 0.27.10
 Declared license: Apache-2.0 OR ISC OR MIT
@@ -1288,6 +1323,13 @@ Source revision: 82c36a428f8d6f05f3bfccdedb243e9d1f85359d
 License text: e8541ea93f027a6c (LICENSE-APACHE)
 License text: 4031faf6212ee744 (LICENSE-MIT)
 
+Cargo: sha2 0.11.1
+Declared license: MIT OR Apache-2.0
+Source: https://github.com/RustCrypto/hashes
+Source revision: 138dc5a05b93f8e49cda177fc6cfd7cc43673e5d
+License text: e8541ea93f027a6c (LICENSE-APACHE)
+License text: 535a6aa345e8622e (LICENSE-MIT)
+
 Cargo: shlex 2.0.1
 Declared license: MIT OR Apache-2.0
 Source: https://github.com/comex/rust-shlex
@@ -1448,18 +1490,18 @@ License text: eb8a6c84630461b3 (LICENSE.spdx)
 License text: 4bf96504d6e83ce5 (LICENSE_APACHE-2.0)
 License text: b7f455413bfe5f9d (LICENSE_MIT)
 
-Cargo: tauri-plugin-store 2.5.0
+Cargo: tauri-plugin-store 2.5.1
 Declared license: Apache-2.0 OR MIT
 Source: https://github.com/tauri-apps/plugins-workspace
-Source revision: a2364a5f216324439feedeb25b2db74e7b1eba90
+Source revision: 8c588be430d803019702f401e80b7cd5f1949aea
 License text: eb8a6c84630461b3 (LICENSE.spdx)
 License text: 4bf96504d6e83ce5 (LICENSE_APACHE-2.0)
 License text: 89ff9689dcf9dd53 (LICENSE_MIT)
 
-Cargo: tauri-plugin-updater 2.13.3
+Cargo: tauri-plugin-updater 2.14.1
 Declared license: Apache-2.0 OR MIT
 Source: https://github.com/tauri-apps/plugins-workspace
-Source revision: 6bbd44d4ef254d835a12c6d7bdf2a8a61778031a
+Source revision: 128190689dbe59b59d344e01bf07b00862aa3791
 License text: eb8a6c84630461b3 (LICENSE.spdx)
 License text: 4bf96504d6e83ce5 (LICENSE_APACHE-2.0)
 License text: 89ff9689dcf9dd53 (LICENSE_MIT)
@@ -2099,7 +2141,7 @@ License text: 4bf96504d6e83ce5 (LICENSE-APACHE-2.0)
 License text: 89ff9689dcf9dd53 (LICENSE-MIT)
 License text: 7c667b0cf9860e6a (LICENSE.spdx)
 
-npm: framer-motion 11.18.2
+npm: framer-motion 14.14.0
 Declared license: MIT
 Source: https://github.com/motiondivision/motion/
 License text: aac842346e3368e0 (LICENSE.md)
@@ -2114,17 +2156,17 @@ Declared license: MIT
 Source: https://github.com/zertosh/loose-envify
 License text: 4b68ef983e0fd2b2 (LICENSE)
 
-npm: lucide-react 0.460.0
+npm: lucide-react 1.73.0
 Declared license: ISC
 Source: https://lucide.dev
-License text: 092a9de2ea14bced (LICENSE)
+License text: ee35498e6684b30c (LICENSE)
 
-npm: motion-dom 11.18.1
+npm: motion-dom 14.14.0
 Declared license: MIT
 Source: https://github.com/motiondivision/motion
 License text: bb59eb35f694a158 (LICENSE.md)
 
-npm: motion-utils 11.18.1
+npm: motion-utils 14.7.0
 Declared license: MIT
 Source: https://github.com/motiondivision/motion
 License text: bb59eb35f694a158 (LICENSE.md)
@@ -2264,23 +2306,6 @@ SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
 OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
--------------------- 092a9de2ea14bced --------------------
-ISC License
-
-Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 -------------------- 0d8a0aecbcbaf057 --------------------
 Copyright (c) The rust-url developers
@@ -5631,6 +5656,36 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
+-------------------- 535a6aa345e8622e --------------------
+Copyright (c) 2016-2026 The RustCrypto Project Developers
+Copyright (c) 2016 Artyom Pavlov
+Copyright (c) 2009-2013 Mozilla Foundation
+Copyright (c) 2006-2009 Graydon Hoare
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
 -------------------- 57f841bc9767b5b8 --------------------
 Copyright (c) 2019-2026 Sean McArthur & Hyper Contributors
 
@@ -6582,29 +6637,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
--------------------- 6a8da4c78c729176 --------------------
-The MIT License (MIT)
-
-Copyright (c) 2015 Alice Maz
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
 -------------------- 6c1e5d0ccf5e8951 --------------------
 SPDXVersion: SPDX-2.1
 DataLicense: CC0-1.0
@@ -7269,6 +7301,33 @@ SOFTWARE.
 This project contains portions of code and architectural concepts originally 
 derived from the "nipper" project (https://github.com/importcjj/nipper), 
 developed by Chen Jiaju, licensed under the MIT License and the Apache License 2.0 (dual licensed).
+
+-------------------- 775a3e20a9af7160 --------------------
+Copyright (c) 2018-2025 The RustCrypto Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 
 -------------------- 777eb7417541b414 --------------------
 MIT License
@@ -9581,6 +9640,33 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+-------------------- a1aa15c3898d79b7 --------------------
+Copyright (c) 2022-2026 The RustCrypto Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
 -------------------- a1fff344297822d3 --------------------
 // Copyright 2015-2016 Brian Smith.
 //
@@ -11511,6 +11597,34 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
+-------------------- c8d7f4fd612a2da8 --------------------
+Copyright (c) 2017-2025 RustCrypto Developers
+Copyright (c) 2017 Artyom Pavlov
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
 -------------------- c935506fff2ef821 --------------------
 Copyright 2017 Juniper Networks, Inc.
 
@@ -12528,6 +12642,33 @@ DEALINGS IN THE SOFTWARE.
 -------------------- db11fec9946737df --------------------
 MIT OR Apache-2.0
 
+-------------------- dec912e37f888cf7 --------------------
+Copyright (c) 2021-2026 RustCrypto Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
 -------------------- dfa7fbad0178fda1 --------------------
 Copyright (c) 2015 Keegan McAllister
 
@@ -13046,6 +13187,33 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
+-------------------- ea753cf1e3ec3e02 --------------------
+Copyright (c) 2020-2026 The RustCrypto Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
 -------------------- eac3911cc3d41ffb --------------------
 Copyright 2013-2014 RAD Game Tools and Valve Software
 Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC
@@ -13164,6 +13332,51 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+
+-------------------- ee35498e6684b30c --------------------
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+---
+
+The following Lucide icons are derived from the Feather project:
+
+airplay, alert-circle, alert-octagon, alert-triangle, aperture, arrow-down-circle, arrow-down-left, arrow-down-right, arrow-down, arrow-left-circle, arrow-left, arrow-right-circle, arrow-right, arrow-up-circle, arrow-up-left, arrow-up-right, arrow-up, at-sign, calendar, cast, check, chevron-down, chevron-left, chevron-right, chevron-up, chevrons-down, chevrons-left, chevrons-right, chevrons-up, circle, clipboard, clock, code, columns, command, compass, corner-down-left, corner-down-right, corner-left-down, corner-left-up, corner-right-down, corner-right-up, corner-up-left, corner-up-right, crosshair, database, divide-circle, divide-square, dollar-sign, download, external-link, feather, frown, hash, headphones, help-circle, info, italic, key, layout, life-buoy, link-2, link, loader, lock, log-in, log-out, maximize, meh, minimize, minimize-2, minus-circle, minus-square, minus, monitor, moon, more-horizontal, more-vertical, move, music, navigation-2, navigation, octagon, pause-circle, percent, plus-circle, plus-square, plus, power, radio, rss, search, server, share, shopping-bag, sidebar, smartphone, smile, square, table-2, tablet, target, terminal, trash-2, trash, triangle, tv, type, upload, x-circle, x-octagon, x-square, x, zoom-in, zoom-out
+
+The MIT License (MIT) (for the icons listed above)
+
+Copyright (c) 2013-present Cole Bemis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 -------------------- f2459c4b106b4bee --------------------
 MIT License

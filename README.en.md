@@ -36,7 +36,7 @@ The intended target is **Windows 10/11 x64** with [Microsoft Edge WebView2 Runti
 Compare a downloaded file's hash against the matching line in the same Release, replacing the example version:
 
 ```powershell
-Get-FileHash .\ChashmYar_2.4.8_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\ChashmYar_2.4.9_x64-setup.exe -Algorithm SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
@@ -61,7 +61,7 @@ When enabled, emergency exit during a strict break requires holding **Ctrl and S
 
 **This is source code; no newly built executable is included.** Before pushing, configure your own signing key in GitHub as described in [CI and release](docs/CI_AND_RELEASE.md) and the [Persian key guide](docs/UPDATER_SIGNING_FA.md); the release fails closed if it is missing. Each push to `main` requests an automatic patch release: the workflow allocates a version, builds Windows x64 and, if its checks pass, **publishes a Release without manual approval**. The separate `CI` workflow also runs, but its result is not a dependency of the release workflow.
 
-The source baseline is `2.4.8`. If the greatest stable tag is still `v2.4.7`, the first successful release of this fix is `v2.4.8`. An equal or higher stable tag instead causes allocation of the patch after the highest tag; no existing tag is overwritten. The published 2.4.7 portable mistakenly loads `localhost:1420`; see the [Persian fix and replacement guide](FIX_2.4.8_FA.md). The corrected workflow and interactive Windows behavior still need confirmation. Permissions, failed checks and queue limits can prevent publication.
+The source baseline is `2.4.9`. If the greatest stable tag is still `v2.4.8`, the next successful release is `v2.4.9`. An equal or higher stable tag instead causes allocation of the patch after the highest tag; no existing tag is overwritten. The docked widget opens after two seconds of continuous hover; its old delay is migrated once and remains configurable. See the [Persian update-test guide](UPDATE_2.4.9_FA.md) and the [2.4.7 portable fix guide](FIX_2.4.8_FA.md). This source and interactive Windows behavior still need confirmation. Permissions, failed checks and queue limits can prevent publication.
 
 Read [CI and release](docs/CI_AND_RELEASE.md) for exact setup, artifacts and recovery. The [Persian GitHub quickstart](docs/GITHUB_QUICKSTART_FA.md) walks through the first upload. Do not omit `.github`, lockfiles, tests or the vendored Tao patch.
 

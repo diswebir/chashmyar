@@ -31,7 +31,11 @@ ok(JSON.stringify(up.endpoints) === JSON.stringify(['https://github.com/diswebir
 ok(!up.dangerousInsecureTransportProtocol && !up.dangerousAcceptInvalidCerts && !up.dangerousAcceptInvalidHostnames && !up.allowDowngrades, 'no insecure transport or downgrades');
 ok(up.windows.installMode === 'passive', 'installer restarts after consent via passive mode');
 ok(!capabilities.permissions.some((x) => String(x).startsWith('updater:')), 'webviews cannot call updater plugin install permissions directly');
-ok(read('src-tauri/Cargo.toml').includes('version = "=2.13.3"'), 'signature-verifying plugin is pinned');
+// Deliberate security review gate: a Dependabot bump must update this reviewed
+// exact pin, verify upstream signature/install behavior and regenerate notices.
+const cargo = read('src-tauri/Cargo.toml');
+ok(/^tauri-plugin-updater\s*=\s*\{[^\r\n}]*\bversion\s*=\s*"=2\.14\.1"[^\r\n}]*\}/m.test(cargo), 'reviewed signature-verifying plugin is exactly pinned');
+ok(/\[\[package\]\]\r?\nname = "tauri-plugin-updater"\r?\nversion = "2\.14\.1"\r?\n/.test(read('src-tauri/Cargo.lock')), 'locked updater matches the reviewed pin');
 ok(updater.includes('option_env!("CHASHMYAR_UPDATER_PUBLIC_KEY")') && lib.includes('pubkey(updater::PUBLIC_KEY.trim())'), 'public key embedded in the binary');
 ok(updater.includes('"unconfigured"') && updater.includes('PUBLIC_KEY.trim().is_empty()'), 'missing public key fails closed');
 ok(updater.includes('Duration::from_secs(20)') && updater.includes('6 * 60 * 60'), 'automatic checks occur after startup and periodically');
