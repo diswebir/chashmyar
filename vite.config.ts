@@ -24,7 +24,8 @@ export default defineConfig({
   envPrefix: ["VITE_", "TAURI_ENV_"],
   build: {
     target: "chrome105",
-    minify: "esbuild",
+    // Use Vite's default minifier: Vite 6 uses esbuild, while Vite 8 uses Oxc.
+    // Forcing esbuild breaks a grouped Vite 8 / plugin-react 6 upgrade.
     sourcemap: false,
     chunkSizeWarningLimit: 1600,
   },

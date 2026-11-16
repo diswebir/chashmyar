@@ -43,6 +43,7 @@ try {
     if (machine === 0x8664) {
       bytes.write('CHASHMYAR_PORTABLE_UPDATER_V1', 0xc0);
       bytes.write(signer.publicKey.trim(), 0x120);
+      bytes.write('CHASHMYAR_RELEASE_AUDIT_V1', 0x200);
     }
     return bytes;
   };
@@ -61,7 +62,7 @@ try {
   const sourcePortable = join(temp, 'release/windows', portableName);
   const portableSig = join(temp, 'release/updater', `${portableName}.sig`);
   const goodPortable = readFileSync(sourcePortable);
-  for (const [offset, description] of [[0xc0, 'portable marker'], [0x120, 'embedded public key']]) {
+  for (const [offset, description] of [[0xc0, 'portable marker'], [0x120, 'embedded public key'], [0x200, 'native payload audit marker']]) {
     const changed = Buffer.from(goodPortable); changed[offset] ^= 1;
     writeFileSync(sourcePortable, changed);
     writeFileSync(portableSig, signer.sign(changed, version, portableName));

@@ -14,12 +14,19 @@ export function makeWindowsBuildPlan(environment) {
   // option_env! embeds this exact value in both binaries. Trim a possible
   // trailing newline from a copied .pub file, as the plugin's decoder is strict.
   const env = { ...environment, CHASHMYAR_UPDATER_PUBLIC_KEY: publicKey };
+  // The non-bundled portable build and collection do not need signing secrets.
+  const publicEnv = { ...env };
+  delete publicEnv.TAURI_SIGNING_PRIVATE_KEY;
+  delete publicEnv.TAURI_SIGNING_PRIVATE_KEY_PASSWORD;
   const cli = join('node_modules', '@tauri-apps', 'cli', 'tauri.js');
   const config = JSON.stringify({ plugins: { updater: { pubkey: publicKey } } });
   return [
     { cmd: process.execPath, args: [cli, 'build', '--target', 'x86_64-pc-windows-msvc', '--bundles', 'nsis', '--config', config, '--ci', '--', '--locked'], env },
-    { cmd: 'cargo', args: ['build', '--manifest-path', 'src-tauri/Cargo.toml', '--target', 'x86_64-pc-windows-msvc', '--release', '--locked', '--features', 'portable'], env },
-    { cmd: process.execPath, args: ['scripts/collect-exe.mjs'], env },
+    // Tauri CLI enables tauri/custom-protocol and runs beforeBuildCommand. A
+    // plain `cargo build --release` does neither: it can ship an empty web UI
+    // that tries to open the development server at localhost:1420.
+    { cmd: process.execPath, args: [cli, 'build', '--target', 'x86_64-pc-windows-msvc', '--no-bundle', '--features', 'portable', '--config', config, '--ci', '--', '--locked'], env: publicEnv },
+    { cmd: process.execPath, args: ['scripts/collect-exe.mjs'], env: publicEnv },
   ];
 }
 

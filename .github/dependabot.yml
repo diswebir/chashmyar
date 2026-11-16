@@ -5,6 +5,19 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Vite 8 and plugin-react 6 require each other; independent major bumps
+    # fail npm ci with ERESOLVE. Group for review; CI must still pass.
+    groups:
+      vite-react-toolchain:
+        patterns:
+          - "vite"
+          - "@vitejs/plugin-react"
+    # Tailwind 4 requires a separate PostCSS/CSS migration and visual review.
+    # Continue receiving v3 minor/patch and security information; do not merge
+    # the incompatible major mechanically. Revisit this after migration.
+    ignore:
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: cargo
     directory: /src-tauri
     schedule:

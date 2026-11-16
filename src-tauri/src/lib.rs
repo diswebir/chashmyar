@@ -31,6 +31,7 @@ pub mod locker;
 pub mod overlay_policy;
 pub mod popup_layer;
 pub mod persistence;
+pub mod release_payload;
 pub mod self_test;
 pub mod score;
 pub mod state;
@@ -49,6 +50,21 @@ use tauri::{Manager, WindowEvent};
 
 use engine::Shared;
 use state::{Phase, Runtime};
+
+// A release compiled with plain Cargo and no Tauri production feature used to
+// ship an empty asset map and connect to localhost:1420. Fail at compile time
+// rather than silently produce an unusable release executable.
+#[cfg(not(debug_assertions))]
+const _: () = assert!(
+    !tauri::is_dev(),
+    "Release builds require tauri/custom-protocol; use npm run build:win"
+);
+
+// The headless release audit and the GUI must inspect/use the very same Tauri
+// context, not two separately constructed configurations.
+fn app_context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
+}
 
 pub fn run() {
     diag::init();
@@ -250,7 +266,7 @@ pub fn run() {
             updater::update_dismiss_notice,
             updater::install_ready_update,
         ])
-        .build(tauri::generate_context!());
+        .build(app_context());
 
     // A failed build must never die silently: a GUI-subsystem binary has no
     // console, so report through the diagnostic log *and* a native message box.

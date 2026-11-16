@@ -44,6 +44,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "updater signing failed" }
     npm run release:stage
     if ($LASTEXITCODE -ne 0) { throw "release staging failed" }
+    Write-Host "بررسی مستقل رابط جاسازی‌شده در هر دو فایل انتشار (نیازمند 7-Zip)..." -ForegroundColor Yellow
+    npm run verify:payload
+    if ($LASTEXITCODE -ne 0) { throw "release payload audit failed" }
     Write-Host "آماده است: release\windows و release\staging" -ForegroundColor Green
     Write-Host "پیش از انتشار، آزمون‌ها و چک‌لیست docs\RELEASE_GUIDE_FA.md را انجام دهید." -ForegroundColor Cyan
 } catch {

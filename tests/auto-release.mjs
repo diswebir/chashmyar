@@ -47,6 +47,7 @@ function makePe(machine, version) {
   if (machine === 0x8664) {
     bytes.write('CHASHMYAR_PORTABLE_UPDATER_V1', 0xe0);
     bytes.write(signer.publicKey.trim(), 0x120);
+    bytes.write('CHASHMYAR_RELEASE_AUDIT_V1', 0x200);
   }
   return bytes;
 }

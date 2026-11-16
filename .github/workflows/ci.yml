@@ -49,7 +49,24 @@ jobs:
       - name: Test release safety (offline GitHub simulation)
         run: npm run test:release
       - name: Verify third-party notices
+        id: notices
         run: npm run licenses:check
+      # A Dependabot PR that changes shipped dependencies must include reviewed
+      # notices. Provide the regenerated file as an artifact, but keep the check
+      # failed until a maintainer reviews and commits it. Never grant PRs write
+      # permissions or expose release secrets to perform this operation.
+      - name: Generate candidate notices for review
+        id: notice_candidate
+        if: failure() && steps.notices.outcome == 'failure' && github.event_name == 'pull_request'
+        run: npm run licenses:generate
+      - name: Attach candidate notices (check remains failed)
+        if: failure() && steps.notices.outcome == 'failure' && steps.notice_candidate.outcome == 'success' && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: candidate-third-party-notices-${{ github.run_id }}-${{ github.run_attempt }}
+          path: THIRD_PARTY_NOTICES.txt
+          if-no-files-found: error
+          retention-days: 7
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Browser and mock-IPC suites

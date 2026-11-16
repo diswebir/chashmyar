@@ -12,6 +12,7 @@ On Windows install:
 2. [Rustup and Rust stable](https://www.rust-lang.org/tools/install), MSVC toolchain. The currently locked Windows dependency graph requires Rust 1.90 or newer.
 3. [Visual Studio C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with **Desktop development with C++** and a Windows SDK.
 4. [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/). See the [official Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
+5. [7-Zip](https://www.7-zip.org/) for the staged-installer payload audit (`7z.exe` in its standard Program Files location or on PATH). For a custom location set `CHASHMYAR_7ZIP` to the executable path.
 
 ```powershell
 rustup default stable-x86_64-pc-windows-msvc
@@ -47,11 +48,12 @@ npm run verify:exe
 npm run licenses:generate
 npm run release:sign
 npm run release:stage
+npm run verify:payload  # executes both staged payloads headlessly on Windows
 ```
 
 Alternatively run `powershell -ExecutionPolicy Bypass -File .\build-windows.ps1` after configuring that environment. The script checks prerequisites and runs build/sign/staging. `release/windows/` contains versioned local executables; `release/staging/` also contains both updater signatures, `latest.json`, license notices and checksums. Both directories are ignored by Git. The installer uses a 32-bit NSIS stub containing the x64 app; the portable app is x64. Clear signing environment variables after use.
 
-The installer can download WebView2 when needed. Tauri updater signatures verify update payloads but are **not** Windows Authenticode publisher signatures; absent a separately managed publisher certificate, SmartScreen can still warn. `npm run verify:exe` checks PE headers and hashes, not native behavior or publisher identity.
+The installer can download WebView2 when needed. Tauri updater signatures verify update payloads but are **not** Windows Authenticode publisher signatures; absent a separately managed publisher certificate, SmartScreen can still warn. `npm run verify:exe` checks PE headers and hashes. `npm run verify:payload` extracts the staged NSIS application with 7-Zip, runs a headless report from that EXE and the staged portable EXE, and checks production protocol, version, flavor, keys and hashes of all embedded assets against `dist`; it must precede upload but is not a GUI or publisher-identity check. Both builds use Tauri CLI; plain release Cargo without `tauri/custom-protocol` fails at compile time.
 
 ## Tests
 
@@ -80,11 +82,11 @@ node scripts/version.mjs check
 # node scripts/version.mjs set 2.5.0
 ```
 
-The automatic workflow uses the source baseline itself if it is greater than all existing stable tags; otherwise it allocates the patch after the greatest stable tag. It applies the version to a tag-only child commit, not to `main`; the child may have an unchanged tree when the source already contains the selected version. For example, baseline `2.4.7` with latest tag `v2.4.6` yields `v2.4.7`, then `v2.4.8`. A deliberate `2.5.0` baseline yields `v2.5.0` when all existing stable tags are lower. Do not bump or tag manually for normal pushes. `set` synchronizes the npm package and lockfile, Tauri config, Cargo manifest and the application's entry in Cargo.lock; edit `CHANGELOG.md` separately. `node scripts/version.mjs check --tag vX.Y.Z` succeeds on the matching release-tag checkout, not necessarily on baseline `main`. See [the Persian release guide](RELEASE_GUIDE_FA.md) for limits and recovery.
+The automatic workflow uses the source baseline itself if it is greater than all existing stable tags; otherwise it allocates the patch after the greatest stable tag. It applies the version to a tag-only child commit, not to `main`; the child may have an unchanged tree when the source already contains the selected version. For example, baseline `2.4.8` with latest tag `v2.4.7` yields `v2.4.8`, then `v2.4.9`. A deliberate `2.5.0` baseline yields `v2.5.0` when all existing stable tags are lower. Do not bump or tag manually for normal pushes. `set` synchronizes the npm package and lockfile, Tauri config, Cargo manifest and the application's entry in Cargo.lock; edit `CHANGELOG.md` separately. `node scripts/version.mjs check --tag vX.Y.Z` succeeds on the matching release-tag checkout, not necessarily on baseline `main`. See [the Persian release guide](RELEASE_GUIDE_FA.md) for limits and recovery.
 
 ## Dependencies and notices
 
-`THIRD_PARTY_NOTICES.txt` is generated from locked Windows-target Cargo metadata and installed non-dev npm dependencies, including an intentionally over-inclusive set of build dependencies. Some upstream crate archives omit their license files; documented pinned fallback texts are in `third-party/fallback-licenses/`. Tao 0.37.2 is a modified local Apache-2.0 path dependency; its source, license and modification notice must remain in `src-tauri/vendor/tao` (see `CHASHMYAR_PATCH.md`). Do not remove the patch based solely on version numbers: focusable notification windows and deliberate strict-lock focus have distinct requirements. After a dependency update, run `npm run licenses:generate`, review the diff and source-offer obligations, and commit the updated notice. An unknown package without a license file fails notice generation rather than being silently omitted. The release workflow verifies the committed notices on Windows and uploads them beside the binaries.
+`THIRD_PARTY_NOTICES.txt` is generated from locked Windows-target Cargo metadata and installed non-dev npm dependencies, including an intentionally over-inclusive set of build dependencies. Some upstream crate archives omit their license files; documented pinned fallback texts are in `third-party/fallback-licenses/`. Tao 0.37.2 is a modified local Apache-2.0 path dependency; its source, license and modification notice must remain in `src-tauri/vendor/tao` (see `CHASHMYAR_PATCH.md`). Do not remove the patch based solely on version numbers: focusable notification windows and deliberate strict-lock focus have distinct requirements. After a dependency update, run `npm run licenses:generate`, review the diff and source-offer obligations, and commit the updated notice. An unknown package without a license file fails notice generation rather than being silently omitted. The release workflow verifies the committed notices on Windows and uploads them beside the binaries. For a PR whose notice check fails, CI attempts to attach a candidate notice as an artifact; the check remains failed until a maintainer reviews and commits the correct file. Vite and its React plugin are grouped for Dependabot version updates; Tailwind major version updates are deferred for a separate PostCSS/visual migration, while security alerts still need attention.
 
 ## Branding and documentation images
 

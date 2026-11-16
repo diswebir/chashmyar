@@ -1,7 +1,7 @@
 {
   "name": "chashmyar",
   "private": true,
-  "version": "2.4.7",
+  "version": "2.4.8",
   "type": "module",
   "description": "ChashmYar - Windows eye-care, screen dimmer & strict Pomodoro",
   "scripts": {
@@ -14,6 +14,7 @@
     "build:host": "npm run build:win",
     "build:exe": "npm run build:win",
     "verify:exe": "node scripts/collect-exe.mjs --verify",
+    "verify:payload": "node scripts/verify-release-payload.mjs",
     "test:ui": "node tests/smoke-ui.mjs",
     "test:ui:v23": "node tests/v23-regression.mjs",
     "test:ui:v24": "node tests/v24-regression.mjs",
@@ -30,7 +31,7 @@
     "test:docs": "node tests/docs-links.mjs",
     "test:ui:all": "node scripts/run-ui-suite.mjs",
     "docs:capture": "node scripts/capture-docs.mjs",
-    "test:release": "node tests/updater-policy.mjs && node tests/windows-build-plan.mjs && node tests/release-tools.mjs && node tests/auto-release.mjs && node tests/tauri-signature-compat.mjs",
+    "test:release": "node tests/updater-policy.mjs && node tests/windows-build-plan.mjs && node tests/release-payload.mjs && node tests/dependency-ci.mjs && node tests/release-tools.mjs && node tests/auto-release.mjs && node tests/tauri-signature-compat.mjs",
     "version:check": "node scripts/version.mjs check",
     "licenses:generate": "node scripts/generate-notices.mjs",
     "licenses:check": "node scripts/generate-notices.mjs --check",

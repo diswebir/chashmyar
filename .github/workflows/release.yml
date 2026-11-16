@@ -132,6 +132,13 @@ jobs:
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           CHASHMYAR_UPDATER_PUBLIC_KEY: ${{ vars.CHASHMYAR_UPDATER_PUBLIC_KEY }}
+      # Execute the standalone portable and the application extracted from the
+      # staged NSIS installer, before upload. This checks embedded UI assets and
+      # updater keys but does not automate a real WebView2 GUI session.
+      - name: Audit embedded production UI in both staged Windows executables
+        run: npm run verify:payload
+        env:
+          CHASHMYAR_UPDATER_PUBLIC_KEY: ${{ vars.CHASHMYAR_UPDATER_PUBLIC_KEY }}
       - name: Upload verified build to the publication job
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:

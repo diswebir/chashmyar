@@ -53,6 +53,9 @@ function verifyPE(path, name) {
       throw new Error(`${name}: not a portable-updater build`);
     }
     if (!buf.includes(Buffer.from(publicKey.trim(), 'utf8'))) throw new Error(`${name}: expected updater public key is not embedded`);
+    // A marker is only a preflight: the mandatory Windows workflow separately
+    // executes the native audit against both staged release payloads.
+    if (!buf.includes(Buffer.from('CHASHMYAR_RELEASE_AUDIT_V1'))) throw new Error(`${name}: native release payload audit is missing`);
   }
 }
 function verifyStage() {

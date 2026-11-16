@@ -60,7 +60,7 @@ ok(portable.includes('ReplaceFileW(') && portable.includes('rollback_after_spawn
 ok(!portable.includes('cmd.exe') && !portable.includes('powershell.exe'), 'portable replacement does not use a command shell');
 ok(release.includes('npm run build:win') && release.includes('npm run release:sign') && release.includes('scripts/stage-release.mjs') && release.includes('scripts/auto-release.mjs publish'), 'workflow builds, signs, verifies and publishes');
 ok(occurrences(release, '${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}') === 2 && occurrences(release, '${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}') === 2, 'only build and sign receive private-key secrets');
-ok(occurrences(release, '${{ vars.CHASHMYAR_UPDATER_PUBLIC_KEY }}') === 4, 'matching public key available in build, sign, stage and publish');
+ok(occurrences(release, '${{ vars.CHASHMYAR_UPDATER_PUBLIC_KEY }}') === 5, 'matching public key available in build, sign, stage, native audit and publish');
 ok(!section(release, '  publish:', '\n          GH_TOKEN:').includes('secrets.TAURI_SIGNING_PRIVATE_KEY'), 'write-enabled publish job has no signing secret');
 ok(!ci.includes('TAURI_SIGNING_PRIVATE_KEY'), 'pull-request CI does not receive the signing secret');
 ok(read('scripts/stage-release.mjs').includes('CHASHMYAR_PORTABLE_UPDATER_V1') && read('scripts/stage-release.mjs').includes('verifyTauriSignature'), 'staging verifies flavour, key and signatures');

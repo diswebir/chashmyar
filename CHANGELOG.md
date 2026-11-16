@@ -2,7 +2,15 @@
 
 Changes to the application are recorded here. Version headers describe source baselines; automatic release tags may differ when newer tags already exist.
 
-## 2.4.7 — source baseline (not yet published)
+## 2.4.8 — corrected source baseline
+
+### Fixed
+- Fixed the 2.4.7 portable production build: both flavors now use Tauri CLI so `tauri/custom-protocol` is enabled and the frontend is embedded. Release-mode compilation refuses a development-protocol build.
+- Added a mandatory headless audit of the actual staged portable EXE and the application extracted from the actual staged NSIS installer. It compares all embedded asset hashes with `dist` and checks protocol, version, flavor and updater public key. It does not execute an interactive WebView2 session.
+- Grouped Vite and React-plugin version proposals, avoided a Vite 8 minifier incompatibility, deferred the breaking Tailwind major migration, and added reviewable notice artifacts for failed dependency PRs without making the notice check optional. See [the Persian fix guide](FIX_2.4.8_FA.md).
+- Preserve the signing-key workflow and no-overwrite automatic patch allocation; retain the existing key when upgrading. Real GitHub execution of this corrected workflow and interactive Windows acceptance tests remain necessary.
+
+## 2.4.7 — published source baseline
 
 ### Added
 - Experimental opt-in full-screen deutan, protan and tritan colour-vision recolouring with adjustable strength, Persian/English controls, color-safe hand-off, saved preferences and best-effort conflict/restoration policy. This is an approximation, not a medical treatment or a guarantee of improved distinction. Browser/mocked and host tests do not validate Windows Magnification, HDR, physical display output or crash recovery; real-Windows testing remains necessary.
@@ -20,7 +28,7 @@ Changes to the application are recorded here. Version headers describe source ba
 - Replaced the previous app icon with the approved black-and-white eye design. Generated consistent PNGs and a seven-size Windows ICO; the same mark is used in the app header, tray's default icon, favicon and both READMEs. Previously built 2.4.3 executables are unchanged and do not contain this logo.
 - Refreshed Persian light/dark browser screenshots and expanded the Persian GitHub quickstart, English CI/release guide, user, architecture, development and security documentation. Screenshots use sample mock data.
 - Added source-only checks for artwork hashes, PNG/ICO dimensions and consistency, local documentation links, and browser loading in both languages/themes. Included an optional reproducible icon generator; normal builds do not require Python or Pillow.
-- These changes have not yet been built or run as a new native Windows executable in this environment. Actual GitHub publication and Windows taskbar/tray rendering still need verification.
+- The 2.4.7 release was later published on GitHub. Its portable executable has the localhost/empty-assets defect corrected above; actual Windows taskbar/tray rendering and interactive behavior remain unverified here.
 
 ## 2.4.3
 
