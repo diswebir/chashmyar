@@ -96,7 +96,8 @@ function mockInitial(): AppSnapshot {
           system,
         },
         timer: { ...parsed.timer, running: false, paused: false, idlePaused: false },
-        eye: { ...parsed.eye, colorVisionStatus: parsed.eye?.colorVisionStatus ?? "off",
+        eye: { ...parsed.eye, gammaAllAccepted: parsed.eye?.gammaAllAccepted ?? parsed.eye?.gammaSupported ?? true,
+          colorVisionStatus: parsed.eye?.colorVisionStatus ?? "off",
           screenFilterStatus: parsed.eye?.screenFilterStatus ?? "off",
           screenFilterCoversOverlay: parsed.eye?.screenFilterCoversOverlay ?? false },
       };
@@ -130,6 +131,7 @@ function mockInitial(): AppSnapshot {
     },
     eye: {
       gammaSupported: true,
+      gammaAllAccepted: true,
       gammaApplied: true,
       colorVisionStatus: "off",
       screenFilterStatus: "off",
@@ -166,7 +168,10 @@ function refreshMockVision() {
   // This status is a browser simulation only; it never changes the display.
   if (typeof eye.coverWindowsMenus !== "boolean") eye.coverWindowsMenus = false;
   const needsScreen = mock.eye.effectiveBrightness < 100 || mock.eye.targetKelvin < 6500;
-  if (!eye.coverWindowsMenus || !eye.enabled || !needsScreen) mock.eye.screenFilterStatus = "off";
+  // Browser-test-only snapshot: the old matrix may still be owned after the
+  // switch is turned off, until the worker confirms release.
+  if (mockScreenScenario === "releasing") mock.eye.screenFilterStatus = "active";
+  else if (!eye.coverWindowsMenus || !eye.enabled || !needsScreen) mock.eye.screenFilterStatus = "off";
   else if (eye.colorSafeEnabled && mock.eye.whitelisted) mock.eye.screenFilterStatus = "paused";
   else if (mockScreenScenario === "active" || mockScreenScenario === "pending" || mockScreenScenario === "conflict" || mockScreenScenario === "error" || mockScreenScenario === "restoreError") {
     mock.eye.screenFilterStatus = mockScreenScenario;
@@ -183,7 +188,7 @@ const scenarioPhase: UpdatePhase = updateScenario === "ready" || updateScenario 
   : updateScenario === "unconfigured" ? "unconfigured" : "idle";
 let mockUpdate: UpdateStatus = {
   revision: 0, phase: scenarioPhase,
-  version: ["ready", "downloading"].includes(scenarioPhase) ? "2.4.11" : null,
+  version: ["ready", "downloading"].includes(scenarioPhase) ? "2.4.12" : null,
   kind: updateKind, downloaded: scenarioPhase === "downloading" ? 50 : 100,
   total: 100, error: scenarioPhase === "error" ? "check" : null,
   buildMarker: "browser-mock",

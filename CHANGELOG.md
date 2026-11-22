@@ -2,6 +2,14 @@
 
 Changes to the application are recorded here. Version headers describe source baselines; automatic release tags may differ when newer tags already exist.
 
+## 2.4.11 — source candidate (not a published release)
+
+### Temperature source and reporting
+- With the experimental Windows-menu option off, request temperature only through the Gamma/LUT path. Remove the automatic orange warmth fallback entirely while retaining the ordinary black dimming overlay. Rejected Gamma calls may leave the previous LUT in place; no fallback can be assumed to restore it.
+- Display complete and partial API rejection separately in Persian and English. The last accepted API result is not proof of a physical display change, and unenumerated monitors cannot be validated by it. Night-schedule precedence is made visible without changing existing defaults or saved preferences.
+- Preserve the explicitly enabled Windows-menu matrix for warmth and dimming, its conservative handoff and independent colour-vision feature. When a screen effect cannot be acquired and no effect is owned, request Gamma plus black dimming, never software warmth. Pending/failed restoration must not be described as settled.
+- Host/fake-driver, browser/mock and cross-compilation checks do not validate an actual Windows GPU, HDR, Start, WebView2, capture, calibration or physical appearance. See [the Persian test guide](UPDATE_2.4.11_FA.md); this source candidate is not a released or signed installer.
+
 ## 2.4.10 — source baseline
 
 ### Widget and system-menu coverage

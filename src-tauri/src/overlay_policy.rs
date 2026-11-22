@@ -1,16 +1,10 @@
 //! Pure policy for the display overlay; platform API success is tested on Windows.
 
-/// A translucent overlay is needed for brightness, or as a warmth fallback when
-/// a driver explicitly rejects gamma. Disabled/color-safe states must show none.
-pub fn needs_overlay(
-    enabled: bool,
-    color_safe_active: bool,
-    brightness: u32,
-    gamma_available: bool,
-    target_kelvin: u32,
-) -> bool {
-    enabled && !color_safe_active
-        && (brightness < 100 || (!gamma_available && target_kelvin < 6500))
+/// The ordinary click-through overlay is for dimming only. Gamma failure must
+/// never create a warm software fallback or change the chosen temperature path.
+/// The explicit opt-in fullscreen matrix is coordinated separately.
+pub fn needs_overlay(enabled: bool, color_safe_active: bool, brightness: u32) -> bool {
+    enabled && !color_safe_active && brightness < 100
 }
 
 /// WDA_EXCLUDEFROMCAPTURE became available in Windows 10 build 19041 (2004).
@@ -117,22 +111,27 @@ mod tests {
 
     #[test]
     fn disabled_or_color_safe_never_shows_the_layer() {
-        assert!(!needs_overlay(false, false, 10, false, 2700));
-        assert!(!needs_overlay(true, true, 10, false, 2700));
+        assert!(!needs_overlay(false, false, 10));
+        assert!(!needs_overlay(true, true, 10));
     }
 
     #[test]
-    fn normal_brightness_uses_a_layer_only_when_needed() {
-        assert!(!needs_overlay(true, false, 100, true, 4200));
-        assert!(needs_overlay(true, false, 99, true, 6500));
-        assert!(needs_overlay(true, false, 10, true, 4200));
+    fn only_dimming_uses_the_overlay() {
+        assert!(!needs_overlay(true, false, 100));
+        assert!(needs_overlay(true, false, 99));
+        assert!(needs_overlay(true, false, 10));
     }
 
     #[test]
-    fn rejected_gamma_gets_warmth_fallback_even_at_full_brightness() {
-        assert!(needs_overlay(true, false, 100, false, 3000));
-        assert!(!needs_overlay(true, false, 100, false, 6500));
-        assert!(needs_overlay(true, false, 70, false, 6500));
+    fn gamma_outcome_and_temperature_cannot_trigger_the_dimming_window() {
+        // There is deliberately no gamma status or Kelvin argument: an explicit
+        // driver failure cannot summon a software warmth window at full brightness.
+        for _gamma_accepted in [true, false] {
+            for _target in [2700, 3000, 4200, 6500] {
+                assert!(!needs_overlay(true, false, 100));
+                assert!(needs_overlay(true, false, 70));
+            }
+        }
     }
 
     #[test]

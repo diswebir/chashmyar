@@ -25,7 +25,7 @@ The Rust core is the authoritative source for native state. `src/lib/bridge.ts` 
 | `micro-bar` | Floating/docked compact timer |
 | `snooze-alert` | Break warning and snooze choices |
 | `break-lock` | Full-screen break / exercises |
-| `dimmer-overlay` | Click-through virtual-desktop brightness / fallback warmth overlay |
+| `dimmer-overlay` | Click-through virtual-desktop black dimming overlay; never a warmth fallback |
 | `micro-break` | Scheduled short-exercise toast |
 | `update-alert` | Passive notice after a signed download is ready |
 
@@ -38,6 +38,8 @@ The overlay has a dedicated out-of-context WinEvent message-loop thread for fore
 For ChashmYar's floating/docked widget and snooze, exercise and update notifications, `popup_layer.rs` subclasses only those native windows on their owning GUI thread. While the software overlay is visible it positions the window below it during show/Z-order changes, rather than waiting for the asynchronous observer. It does not consume input, alter widget geometry or change Tao visibility state; the overlay remains click-through. This is a preventative design, not proof of zero-frame behavior: real Windows, WebView2 dragging/clicks, focus and multi-monitor behavior still require interactive tests.
 
 A locally patched Apache-2.0 Tao 0.37.2 preserves Tauri's own visible-state bookkeeping while using `SW_SHOWNA` for windows created hidden and unfocused, and for non-focusable windows. Snooze and short-exercise cards remain focusable when a user deliberately interacts; the dimmer is non-focusable, and the strict break explicitly focuses itself. Details and attribution are in `src-tauri/vendor/tao/CHASHMYAR_PATCH.md`. Native WebView2 interaction and foreground/caret behavior must still be tested on real Windows.
+
+With the optional system-menu effect off, temperature is requested only through the Gamma/LUT API. The ordinary overlay renders black dimming only, regardless of Gamma failure; it never substitutes software warmth. A complete rejection and a partial rejection among the attempted calls are separately displayed using a coherent pair of last API results. These status flags do not prove physical application or that all physical displays were enumerated, and a failed new request can leave an older LUT in place. The optional colour-vision feature remains an independent user-selected recolouring effect, not a temperature fallback.
 
 The gamma worker parks when settled, linearly interpolates over the saved duration (default two seconds), and backs off failed driver calls for two seconds while allowing a new target to wake it. Gamma driver writes are serialized; shutdown stops new warm writes before the neutral reset. A failed neutral reset leaves the watchdog armed for process exit. The ten-second reassertion does not keep forcing an identity ramp when warmth is disabled. The settings and widget-position writers likewise park between batches; their coalescing delays are preserved. These are scheduling changes, not measured Windows CPU or power benchmarks.
 

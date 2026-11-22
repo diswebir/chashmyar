@@ -44,9 +44,11 @@ pub fn refresh(app: &AppHandle, shared: &Shared) -> Snapshot {
             kelvin
         };
 
-        // Reflect the last driver result rather than assuming gamma is always
-        // supported. In legacy mode an explicit failure activates the fallback.
-        rt.gamma_supported = display::gamma_available();
+        // Reflect the last Gamma API result. In the default path an explicit
+        // failure is reported, never converted into a software warmth layer.
+        let (gamma_any_accepted, gamma_all_accepted) = display::last_gamma_result();
+        rt.gamma_supported = gamma_any_accepted;
+        rt.gamma_all_accepted = gamma_all_accepted;
         let wants_screen = rt.settings.eye.cover_windows_menus && rt.settings.eye.enabled && !paused_by_whitelist
             && (brightness < 100 || target < display::NEUTRAL_KELVIN);
         let neutral = if display::fullscreen_neutral_ready() {
@@ -81,7 +83,7 @@ pub fn refresh(app: &AppHandle, shared: &Shared) -> Snapshot {
             && !paused_by_whitelist && target < display::NEUTRAL_KELVIN;
 
         let overlay_visible = crate::overlay_policy::needs_overlay(
-            rt.settings.eye.enabled, paused_by_whitelist, brightness, rt.gamma_supported, target,
+            rt.settings.eye.enabled, paused_by_whitelist, brightness,
         ) && !handoff.hide_overlay && !crate::color_filter::screen_covers_overlay();
         // Publish only an atomic target while holding the runtime lock. Calling
         // synchronous native window getters here can deadlock the UI thread.

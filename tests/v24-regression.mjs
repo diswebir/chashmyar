@@ -143,30 +143,80 @@ try {
   await capturePage.getByTestId('capture-exclusion-status').waitFor();
   ok((await capturePage.getByTestId('capture-exclusion-status').innerText()).includes('روش‌های ضبط سازگار'), 'accepted capture exclusion is reported with compatibility caveat');
 
-  // Simulate the snapshot from a driver rejecting gamma. This checks only the
-  // webview fallback rendering; Win32 detection and screen capture remain manual.
-  const fallback = structuredClone(initial);
-  fallback.settings.eye.enabled = true;
-  fallback.eye.gammaSupported = false;
-  fallback.eye.effectiveKelvin = 6500; // driver did not reach the requested LUT
-  fallback.eye.targetKelvin = 3000;
-  fallback.eye.effectiveBrightness = 100;
-  fallback.eye.whitelisted = false;
-  const overlay = await fresh({ snapshot: fallback, win: 'dimmer-overlay', viewport: { width: 1000, height: 700 } });
-  const layers = overlay.locator('.pointer-events-none > .absolute');
-  eq(await layers.count(), 2, 'software overlay has separate dim and warmth layers');
-  const dim = await layers.nth(0).evaluate(el => el.style.background);
-  const warm = await layers.nth(1).evaluate(el => el.style.background);
-  ok(/rgba\(0, 0, 0, 0\)/.test(dim), '100% brightness adds no black dimming');
-  ok(/rgba\(255, 124, 44, 0\.[1-9]/.test(warm), `rejected gamma uses requested Kelvin for warmth: ${warm}`);
+  // Browser simulation only: failure/recovery must not tint the ordinary
+  // overlay. Native Gamma, capture and physical colour remain manual tests.
+  const rejected = structuredClone(initial);
+  rejected.settings.eye.enabled = true;
+  rejected.settings.eye.coverWindowsMenus = false;
+  rejected.eye.gammaSupported = false;
+  rejected.eye.gammaAllAccepted = false;
+  rejected.eye.effectiveKelvin = 4500; // previous warm LUT may have remained
+  rejected.eye.targetKelvin = 3000;
+  rejected.eye.effectiveBrightness = 100;
+  rejected.eye.whitelisted = false;
+  for (const target of [2700, 3000, 4200, 6500]) {
+    for (const brightness of [100, 82]) {
+      const seed = structuredClone(rejected);
+      seed.eye.targetKelvin = target;
+      seed.eye.effectiveBrightness = brightness;
+      const overlay = await fresh({ snapshot: seed, win: 'dimmer-overlay', viewport: { width: 1000, height: 700 } });
+      const layers = overlay.locator('.pointer-events-none > .absolute');
+      eq(await layers.count(), 1, `${target}K/${brightness}% has one dimming-only layer`);
+      const background = await layers.nth(0).evaluate(el => el.style.background);
+      const match = background.match(/^rgba\(0, 0, 0, ([\d.]+)\)$/);
+      ok(match && (brightness === 100 ? Number(match[1]) === 0 : Number(match[1]) > 0),
+        `${target}K/${brightness}% is black only: ${background}`);
+      await overlay.context().close();
+    }
+  }
+  // Driver acceptance has no impact on the black layer either.
+  const acceptedOverlay = structuredClone(rejected);
+  acceptedOverlay.eye.gammaSupported = true; acceptedOverlay.eye.gammaAllAccepted = true;
+  acceptedOverlay.eye.effectiveBrightness = 82;
+  const black = await fresh({ snapshot: acceptedOverlay, win: 'dimmer-overlay' });
+  eq(await black.locator('.pointer-events-none > .absolute').count(), 1, 'accepted Gamma still has only one black layer');
+  ok(/^rgba\(0, 0, 0, 0\.[1-9]/.test(await black.getByTestId('brightness-overlay-layer').evaluate(el => el.style.background)),
+    'software dimming survives Gamma acceptance');
   for (const disabled of ['disabled', 'whitelist']) {
-    const seed = structuredClone(fallback);
+    const seed = structuredClone(rejected);
+    seed.eye.effectiveBrightness = 70;
     if (disabled === 'disabled') seed.settings.eye.enabled = false;
     else seed.eye.whitelisted = true;
-    const p = await fresh({ snapshot: seed, win: 'dimmer-overlay', viewport: { width: 1000, height: 700 } });
+    const p = await fresh({ snapshot: seed, win: 'dimmer-overlay' });
     const backgrounds = await p.locator('.pointer-events-none > .absolute').evaluateAll(els => els.map(el => el.style.background));
-    ok(backgrounds.every(value => /, 0\)$/.test(value)), `${disabled} removes both overlay effects`);
+    eq(backgrounds.length, 1, `${disabled} retains only the dimming element`);
+    ok(backgrounds.every(value => /, 0\)$/.test(value)), `${disabled} removes dimming`);
   }
+
+  const failedPage = await fresh({ snapshot: rejected });
+  await nav(failedPage, 'محافظ چشم').click();
+  ok((await failedPage.getByTestId('temperature-source').innerText()).includes('درخواست ناموفق'), 'sidebar reports Gamma rejection');
+  ok((await failedPage.getByTestId('temperature-engine-status').innerText()).includes('گرمای نرم‌افزاری جایگزین نمی‌شود'), 'failure explicitly says no software warmth');
+  await failedPage.getByRole('button', { name: 'English', exact: true }).click();
+  await failedPage.getByRole('slider', { name: 'Colour temperature (Kelvin)', exact: true }).waitFor();
+  ok((await failedPage.getByTestId('temperature-source').innerText()).includes('request failed'), 'Gamma failure translated');
+  const englishFailure = await failedPage.getByTestId('temperature-engine-status').innerText();
+  ok(englishFailure.includes('software warmth will not replace it'), `no-fallback warning translated: ${englishFailure}`);
+
+  const partial = structuredClone(rejected);
+  partial.eye.gammaSupported = true; partial.eye.gammaAllAccepted = false;
+  const partialPage = await fresh({ snapshot: partial });
+  await nav(partialPage, 'محافظ چشم').click();
+  ok((await partialPage.getByTestId('temperature-source').innerText()).includes('خطای جزئی'), 'partial Gamma rejection is not hidden by another successful call');
+  ok((await partialPage.getByTestId('temperature-engine-status').innerText()).includes('برخی مسیرهای Gamma ناموفق بودند'), 'partial failure explained');
+  await partialPage.getByRole('button', { name: 'English', exact: true }).click();
+  await partialPage.getByRole('slider', { name: 'Colour temperature (Kelvin)', exact: true }).waitFor();
+  ok((await partialPage.getByTestId('temperature-engine-status').innerText()).includes('Some Gamma paths failed'), 'partial failure translated');
+
+  const scheduled = structuredClone(rejected);
+  scheduled.eye.scheduled = true;
+  const scheduledPage = await fresh({ snapshot: scheduled });
+  ok(await scheduledPage.getByTestId('schedule-overrides-manual').isVisible(), 'dashboard warns when night schedule overrides manual sliders');
+  await nav(scheduledPage, 'محافظ چشم').click();
+  ok(await scheduledPage.getByTestId('schedule-overrides-manual').isVisible(), 'eye settings show the same schedule warning');
+  await scheduledPage.getByRole('button', { name: 'English', exact: true }).click();
+  await scheduledPage.getByRole('slider', { name: 'Colour temperature (Kelvin)', exact: true }).waitFor();
+  ok((await scheduledPage.getByTestId('schedule-overrides-manual').innerText()).includes('manual sliders apply'), 'schedule warning translated');
 
   const legacy = structuredClone(initial);
   legacy.settings.eye.scheduleEnabled = false;
@@ -187,7 +237,7 @@ try {
   eq(await preserved.getByRole('switch', { name: /فعال‌سازی زمان‌بندی/ }).getAttribute('aria-checked'), 'false', 'saved disabled schedule is preserved');
 
   eq(errors.length, 0, `no uncaught browser errors: ${errors.join('; ')}`);
-  console.log(`PASS: ${checks} v2.4 browser/mock assertions for sliders, defaults, toast and fallback`);
+  console.log(`PASS: ${checks} browser/mock assertions for sliders, defaults, Gamma reporting and dimming`);
 } finally {
   await Promise.all(contexts.map((context) => context.close()));
   await browser.close();

@@ -5,7 +5,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
 const root = process.cwd();
-const rootDocs = ['README.md', 'README.en.md', 'START_HERE_FA.md', 'FIX_2.4.8_FA.md', 'UPDATE_2.4.9_FA.md', 'UPDATE_2.4.10_FA.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md'];
+const rootDocs = ['README.md', 'README.en.md', 'START_HERE_FA.md', 'FIX_2.4.8_FA.md', 'UPDATE_2.4.9_FA.md', 'UPDATE_2.4.10_FA.md', 'UPDATE_2.4.11_FA.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md'];
 function markdownFiles(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

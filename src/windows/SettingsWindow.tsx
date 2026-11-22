@@ -108,8 +108,19 @@ export default function SettingsWindow() {
   const [newEntry, setNewEntry] = useState("");
   const { status: updateStatus, check: checkUpdates } = useUpdateStatus();
   const { settings, timer, eye } = snapshot;
-  // This is an accepted request, not proof of a physical display appearance.
-  const screenMatrixActive = eye.screenFilterStatus === "active" && eye.screenFilterCoversOverlay;
+  // An API acceptance is not proof of the physical display appearance. During
+  // a handoff/restoration, do not pretend either temperature source is settled.
+  const screenMatrixActive = eye.screenFilterStatus === "active" && eye.screenFilterCoversOverlay
+    && settings.eye.coverWindowsMenus && settings.eye.enabled && !eye.whitelisted;
+  const screenTransitioning = !screenMatrixActive && (eye.screenFilterCoversOverlay
+    || (settings.eye.coverWindowsMenus && settings.eye.enabled && !eye.whitelisted
+      && eye.screenFilterStatus === "pending"));
+  const gammaWarning = !eye.gammaSupported || !eye.gammaAllAccepted;
+  // Even when eye care is switched off or colour-safe pauses it, a rejected
+  // reset can leave the old LUT in place. Do not mask that failure as "off".
+  const gammaRestoring = !screenMatrixActive && !screenTransitioning && !gammaWarning
+    && (!settings.eye.enabled || eye.whitelisted) && eye.effectiveKelvin < 6500;
+  const temperatureWarning = screenTransitioning || gammaRestoring || (!screenMatrixActive && gammaWarning);
 
   useEffect(() => {
     let disposed = false;
@@ -308,9 +319,16 @@ export default function SettingsWindow() {
             </div>
             <div className="mt-1.5 flex items-center justify-between text-slate-400">
               <span>{t("منبع دما")}</span>
-              <span className={screenMatrixActive || eye.gammaSupported ? "text-emerald-300" : "text-amber-300"}>
+              <span data-testid="temperature-source" aria-live="polite"
+                className={temperatureWarning ? "text-amber-300" : "text-emerald-300"}>
                 {screenMatrixActive ? t("افکت تمام‌صفحه ویندوز")
-                  : eye.gammaSupported ? t("Gamma Ramp سخت‌افزاری") : t("لایه نرم‌افزاری جایگزین")}
+                  : screenTransitioning ? t("در حال انتقال افکت تمام‌صفحه")
+                  : !eye.gammaSupported ? t("Gamma سخت‌افزاری — درخواست ناموفق")
+                  : !eye.gammaAllAccepted ? t("Gamma سخت‌افزاری — خطای جزئی")
+                  : gammaRestoring ? t("در حال بازگردانی Gamma")
+                  : !settings.eye.enabled ? t("محافظ خاموش")
+                  : eye.whitelisted ? t("رنگ‌ایمن فعال")
+                  : t("Gamma Ramp سخت‌افزاری")}
               </span>
             </div>
           </div>
@@ -405,6 +423,11 @@ export default function SettingsWindow() {
                         icon={<Sparkles size={16} />}
                       />
                       <div className="space-y-4">
+                        {eye.scheduled && settings.eye.enabled ? (
+                          <p data-testid="schedule-overrides-manual" className="text-[11px] leading-6 text-amber-300">
+                            {t("زمان‌بندی شب فعال است؛ اسلایدرهای دستی پس از پایان یا خاموش‌شدن آن اثر می‌کنند.")}
+                          </p>
+                        ) : null}
                         <Slider
                           label={t("دمای رنگ")}
                           hint={t("هرچه کلوین کمتر باشد، رنگ نور گرم‌تر است")}
@@ -515,10 +538,15 @@ export default function SettingsWindow() {
                   <GlassCard>
                     <SectionHeading
                       title={t("دما و روشنایی")}
-                      subtitle={t("تغییرات بلافاصله روی نمایشگر اعمال می‌شود")}
+                      subtitle={t("درخواست تغییر بر پایهٔ تنظیمات جاری ارسال می‌شود")}
                       icon={<Eye size={16} />}
                     />
                     <div className="space-y-5">
+                      {eye.scheduled && settings.eye.enabled ? (
+                        <p data-testid="schedule-overrides-manual" className="text-[11px] leading-6 text-amber-300">
+                          {t("زمان‌بندی شب فعال است؛ اسلایدرهای دستی پس از پایان یا خاموش‌شدن آن اثر می‌کنند.")}
+                        </p>
+                      ) : null}
                       <Slider
                         label={t("دمای رنگ (کلوین)")}
                         hint={t("۲۷۰۰ کلوین: شب گرم — ۶۵۰۰ کلوین: نور روز")}
@@ -546,13 +574,17 @@ export default function SettingsWindow() {
                       <SystemMenuFilter />
                       <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3 text-[11px] leading-6 text-slate-400">
                         {t("وضعیت موتور رنگ:")}{" "}
-                        <b className={screenMatrixActive || eye.gammaSupported ? "text-emerald-300" : "text-amber-300"}>
+                        <b data-testid="temperature-engine-status" role="status" aria-live="polite"
+                          className={temperatureWarning ? "text-amber-300" : "text-emerald-300"}>
                           {screenMatrixActive ? t("گرما و تیرگی در افکت تمام‌صفحه درخواست شده‌اند؛ ظاهر تضمین نمی‌شود")
-                            : eye.gammaSupported ? t("درایور درخواست Gamma را پذیرفت؛ اعمال رنگ تضمین نمی‌شود")
-                            : t("درایور GPU اجازه تغییر Gamma را نداد")}
+                            : screenTransitioning ? t("انتقال یا بازگردانی افکت تمام‌صفحه در جریان است؛ وضعیت رنگ هنوز تأیید نشده است.")
+                            : !eye.gammaSupported ? t("آخرین درخواست Gamma ناموفق بود؛ گرمای نرم‌افزاری جایگزین نمی‌شود و دما ممکن است تغییر نکند.")
+                            : !eye.gammaAllAccepted ? t("برخی مسیرهای Gamma ناموفق بودند؛ گرمای نرم‌افزاری جایگزین نمی‌شود و نتیجه ممکن است متفاوت باشد.")
+                            : gammaRestoring ? t("محافظ متوقف است؛ خنثی‌سازی Gamma در جریان است و نتیجه تضمین نمی‌شود.")
+                            : !settings.eye.enabled ? t("محافظ چشم خاموش است؛ این حالت نیز غیرفعال است.")
+                            : eye.whitelisted ? t("رنگ‌ایمن فعال است؛ فیلتر چشم‌یار موقتاً متوقف شد.")
+                            : t("درخواست‌های Gamma پذیرفته شدند؛ اعمال رنگ تضمین نمی‌شود.")}
                         </b>
-                        {!eye.gammaSupported && !eye.screenFilterCoversOverlay
-                          ? t("— لایه گرمای نرم‌افزاری فعال شد.") : ""}
                         <p className="mt-2" data-testid="capture-exclusion-status">
                           {eye.screenFilterCoversOverlay
                             ? t("پنهان‌سازی پنجره شامل افکت تمام‌صفحه نیست؛ تصویر و ضبط را با ابزار خود بررسی کنید.")

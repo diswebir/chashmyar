@@ -116,7 +116,10 @@ export interface TimerState {
 }
 
 export interface EyeInfo {
+  /** Last API attempt: at least one call reported acceptance. */
   gammaSupported: boolean;
+  /** All attempted calls reported acceptance; neither flag proves visible changes. */
+  gammaAllAccepted: boolean;
   gammaApplied: boolean;
   /** Most recent native API result; not proof of a physical display change. */
   colorVisionStatus: ColorVisionStatus;

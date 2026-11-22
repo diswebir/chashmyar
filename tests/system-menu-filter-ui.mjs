@@ -37,11 +37,11 @@ try {
   eq(initial.settings.eye.coverWindowsMenus, false, 'new mode defaults off');
   await eyeTab(p);
   eq(await toggle(p).getAttribute('aria-checked'), 'false', 'off switch visible');
-  ok((await status(p).innerText()).includes('روش قبلی'), 'legacy mode explicitly described');
+  ok((await status(p).innerText()).includes('دما فقط از Gamma'), 'default Gamma-only temperature is explicitly described');
   await p.getByRole('button', { name: /مطالعه.*گرمای ملایم/ }).click();
   await toggle(p).click(); await saved(p, true);
   eq(await status(p).getAttribute('data-status'), 'unsupported', 'ordinary browser mock does not claim native support');
-  ok((await status(p).innerText()).includes('لایه قبلی'), 'unsupported mock explains fallback');
+  ok((await status(p).innerText()).includes('Gamma و لایه تیرگی'), 'unsupported mock explains Gamma plus dimming fallback');
   await p.reload({ waitUntil: 'networkidle' }); await eyeTab(p);
   eq(await toggle(p).getAttribute('aria-checked'), 'true', 'opt-in survives reload');
   await toggle(p).click(); await saved(p, false);
@@ -63,10 +63,10 @@ try {
   // persisted value consistently before asserting a retry emitted a revision.
   seed.revision = 0;
   seed.settings.eye.coverWindowsMenus = true;
-  seed.eye.gammaSupported = false; seed.eye.targetKelvin = 3000;
+  seed.eye.gammaSupported = false; seed.eye.gammaAllAccepted = false; seed.eye.targetKelvin = 3000;
   seed.eye.effectiveBrightness = 70; seed.eye.captureExcluded = true;
   const warmthOnly = structuredClone(seed);
-  warmthOnly.eye.gammaSupported = true; warmthOnly.eye.effectiveBrightness = 100;
+  warmthOnly.eye.gammaSupported = true; warmthOnly.eye.gammaAllAccepted = true; warmthOnly.eye.effectiveBrightness = 100;
   warmthOnly.eye.targetKelvin = 3000; warmthOnly.settings.eye.brightness = 100;
   const warm = await fresh({ seed: warmthOnly, screen: 'active' }); await eyeTab(warm);
   eq(await status(warm).getAttribute('data-status'), 'active', 'warmth-only mode is requested even when Gamma reports success');
@@ -74,6 +74,8 @@ try {
 
   const active = await fresh({ seed, screen: 'active', cvd: 'active' }); await eyeTab(active);
   eq(await status(active).getAttribute('data-status'), 'active', 'screen API success simulated');
+  ok((await active.getByTestId('temperature-source').innerText()).includes('افکت تمام‌صفحه'), 'opt-in screen is the displayed temperature source');
+  ok((await active.getByTestId('temperature-engine-status').innerText()).includes('گرما و تیرگی'), 'opt-in screen retains warmth and dimming');
   eq(await active.getByTestId('color-vision-status').getAttribute('data-status'), 'active', 'screen and vision settings coexist');
   ok((await active.getByTestId('capture-exclusion-status').innerText()).includes('شامل افکت تمام‌صفحه نیست'), 'no false capture-exclusion promise');
   const activeOverlay = await fresh({ seed, screen: 'active', cvd: 'active', win: 'dimmer-overlay' });
@@ -85,7 +87,8 @@ try {
   for (const failure of ['conflict', 'error', 'unsupported']) {
     const page = await fresh({ seed, screen: failure }); await eyeTab(page);
     eq(await status(page).getAttribute('data-status'), failure, `${failure} status`);
-    ok((await status(page).innerText()).includes('لایه قبلی'), `${failure} displays fallback`);
+    ok((await status(page).innerText()).includes('Gamma و لایه تیرگی'), `${failure} requests Gamma and dimming`);
+    ok((await page.getByTestId('temperature-engine-status').innerText()).includes('گرمای نرم‌افزاری جایگزین نمی‌شود'), `${failure} does not conceal Gamma rejection`);
     if (failure !== 'unsupported') {
       ok(await page.getByTestId('system-menu-filter-retry').isVisible(), `${failure} allows explicit retry`);
       const revision = (await read(page)).revision;
@@ -95,8 +98,27 @@ try {
     } else eq(await page.getByTestId('system-menu-filter-retry').count(), 0, 'unsupported does not offer misleading retry');
     const overlay = await fresh({ seed, screen: failure, win: 'dimmer-overlay' });
     const colors = await overlay.locator('.pointer-events-none > .absolute').evaluateAll(els => els.map(el => el.style.background));
-    ok(colors.every(value => /, 0\.[1-9]/.test(value)), `${failure} renders both overlay fallbacks`);
+    eq(colors.length, 1, `${failure} renders only the dimming layer`);
+    ok(/^rgba\(0, 0, 0, 0\.[1-9]/.test(colors[0]), `${failure} retains black dimming without software warmth`);
   }
+  const pending = await fresh({ seed, screen: 'pending' }); await eyeTab(pending);
+  ok((await pending.getByTestId('temperature-source').innerText()).includes('در حال انتقال'), 'pending handoff is not misreported as a settled source');
+  ok((await pending.getByTestId('temperature-engine-status').innerText()).includes('وضعیت رنگ هنوز تأیید نشده'), 'pending handoff explains uncertainty');
+  const pendingOverlay = await fresh({ seed, screen: 'pending', win: 'dimmer-overlay' });
+  const pendingBackground = await pendingOverlay.getByTestId('brightness-overlay-layer').evaluate(el => el.style.background);
+  ok(/, 0\)$/.test(pendingBackground), 'pending fullscreen handoff suppresses ordinary dimming');
+
+  // The switch can already be off while an old matrix is still owned. Never
+  // claim Gamma has resumed until the simulated release is confirmed.
+  const releasing = structuredClone(seed); releasing.settings.eye.coverWindowsMenus = false;
+  const releasingPage = await fresh({ seed: releasing, screen: 'releasing' }); await eyeTab(releasingPage);
+  ok((await status(releasingPage).innerText()).includes('بازگردانی افکت تمام‌صفحه'), 'off switch with owned matrix reports release in progress');
+  ok((await releasingPage.getByTestId('temperature-source').innerText()).includes('در حال انتقال'), 'releasing source is not presented as settled Gamma');
+  ok((await releasingPage.getByTestId('temperature-engine-status').innerText()).includes('وضعیت رنگ هنوز تأیید نشده'), 'releasing status warns about uncertainty');
+  await releasingPage.getByRole('button', { name: 'English', exact: true }).click();
+  await releasingPage.getByRole('switch', { name: /Cover Windows menus/ }).waitFor({ state: 'visible' });
+  ok((await status(releasingPage).innerText()).includes('Gamma path is not yet settled'), 'release warning translated');
+
   const paused = structuredClone(seed); paused.eye.whitelisted = true;
   const safe = await fresh({ seed: paused, screen: 'active' }); await eyeTab(safe);
   ok((await status(safe).innerText()).includes('رنگ‌ایمن'), 'whitelist pauses fullscreen mode');
@@ -105,8 +127,9 @@ try {
   ok((await status(disabled).innerText()).includes('محافظ چشم خاموش'), 'eye power switch pauses screen mode');
   const en = await fresh({ seed, screen: 'conflict' }); await eyeTab(en);
   await en.getByRole('button', { name: 'English', exact: true }).click();
+  await en.getByRole('switch', { name: /Cover Windows menus/ }).waitFor({ state: 'visible' });
   ok(await en.getByRole('switch', { name: /Cover Windows menus/ }).isVisible(), 'toggle translated');
-  ok((await status(en).innerText()).includes('previous overlay'), 'fallback translated');
+  ok((await status(en).innerText()).includes('Gamma and the previous dimming overlay'), 'Gamma plus dimming fallback translated');
   ok((await en.getByTestId('system-menu-filter-retry').innerText()).includes('Retry'), 'retry translated');
   eq(errors.length, 0, `no uncaught browser errors: ${errors.join('; ')}`);
   console.log(`PASS: ${checks} system-menu filter browser/mock checks (not a Windows visual test)`);

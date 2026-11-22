@@ -10,7 +10,7 @@
 //! * The ramp is also restored on exit and from a panic hook.
 
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use crate::gamma_logic::{self, GammaTransition};
@@ -31,6 +31,10 @@ static GAMMA_WORKER_THREAD: OnceLock<std::thread::Thread> = OnceLock::new();
 // This is the last API result, not proof that a driver actually applied the
 // ramp: Windows may silently reject a valid-looking ramp (especially in HDR).
 static GAMMA_AVAILABLE: AtomicBool = AtomicBool::new(true);
+// Coherent pair for the UI: bit 0 = at least one accepted, bit 1 = all
+// enumerated calls accepted. Native startup probes before opening the UI.
+// This reports API results only, not whether any monitor visibly changed.
+static GAMMA_RESULT: AtomicU8 = AtomicU8::new(0b11);
 // Store target, duration and the fullscreen neutral hold in one atomic value.
 // Kelvin is at most 6500, so its highest bit is available for the hold flag.
 const FULLSCREEN_HOLD: u64 = 1 << 63;
@@ -117,6 +121,18 @@ pub fn build_ramp(kelvin: u32) -> Vec<u16> {
 
 #[derive(Debug, Clone, Copy)]
 struct RampResult { any: bool, all: bool }
+
+fn report_gamma_result(result: RampResult) {
+    let bits = u8::from(result.any) | (u8::from(result.all) << 1);
+    GAMMA_RESULT.store(bits, Ordering::SeqCst);
+}
+
+/// Last API result as (at least one accepted, all attempted calls accepted).
+/// Neither value proves physical application or inclusion of every display.
+pub fn last_gamma_result() -> (bool, bool) {
+    let bits = GAMMA_RESULT.load(Ordering::SeqCst);
+    (bits & 1 != 0, bits & 2 != 0)
+}
 
 #[cfg(windows)]
 fn push_ramp(ramp: &[u16]) -> RampResult {
@@ -213,6 +229,7 @@ fn apply_gamma_locked(kelvin: u32) -> bool {
     let result = push_ramp(&build_ramp(kelvin));
     GAMMA_AVAILABLE.store(result.any, Ordering::SeqCst);
     LAST_ALL_OK.store(result.all, Ordering::SeqCst);
+    report_gamma_result(result);
     if result.any {
         CURRENT.store(kelvin, Ordering::SeqCst);
         TOUCHED.store(warm, Ordering::SeqCst);
@@ -389,6 +406,7 @@ pub fn spawn_reassert_loop() {
             else {
                 let result = push_ramp(&build_ramp(current));
                 LAST_ALL_OK.store(result.all, Ordering::SeqCst);
+                report_gamma_result(result);
                 if !result.any { GAMMA_AVAILABLE.store(false, Ordering::SeqCst); }
                 !result.any
             }

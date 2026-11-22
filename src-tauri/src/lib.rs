@@ -100,6 +100,7 @@ pub fn run() {
             let gamma_supported = display::gamma_supported_probe();
             let mut runtime = Runtime::new(settings);
             runtime.gamma_supported = gamma_supported;
+            runtime.gamma_all_accepted = display::last_gamma_result().1;
             if !eye_on_launch {
                 runtime.settings.eye.enabled = false;
             }

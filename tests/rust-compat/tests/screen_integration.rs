@@ -7,6 +7,7 @@
 #[path = "../../../src-tauri/src/color_filter.rs"] mod color_filter;
 #[path = "../../../src-tauri/src/gamma_logic.rs"] mod gamma_logic;
 #[path = "../../../src-tauri/src/display.rs"] mod display;
+#[path = "../../../src-tauri/src/overlay_policy.rs"] mod overlay_policy;
 #[path = "../../../src-tauri/src/screen_handoff.rs"] mod screen_handoff;
 mod diag { pub fn log<T: AsRef<str>>(_: T) {} }
 
@@ -38,7 +39,8 @@ impl Simulation {
         }
         // Model a window worker that applies the latest hide/show request and
         // publishes its confirmation only for the *next* handoff decision.
-        let legacy_overlay_visible = brightness < 100 && !d.hide_overlay && !covered;
+        let legacy_overlay_visible = overlay_policy::needs_overlay(true, false, brightness)
+            && !d.hide_overlay && !covered;
         self.overlay_hidden = !legacy_overlay_visible;
         if covered && color_filter::screen_status() == Status::Active {
             assert!(display::fullscreen_neutral_ready(), "screen acquisition requires the serialized neutral ack");
@@ -73,6 +75,12 @@ fn real_workers_handoff_fallback_retry_and_restore_without_own_double_tint() {
     display::set_target(3000, 100);
     wait("initial legacy warmth", 2000, || display::current_kelvin() == 3000);
     let mut sim = Simulation::new();
+    // Default/off: Gamma remains warm, no screen matrix is acquired and full
+    // brightness never creates a software warmth layer.
+    sim.tick(false, 100, 3000);
+    assert!(sim.overlay_hidden);
+    assert!(!color_filter::screen_covers_overlay());
+    assert_eq!(*m::CURRENT.lock().unwrap(), IDENTITY);
 
     // A primary display's success must not conceal a partial neutral failure.
     g::PARTIAL.store(true, Ordering::SeqCst);
@@ -114,6 +122,15 @@ fn real_workers_handoff_fallback_retry_and_restore_without_own_double_tint() {
     sim.until("external matrix conflict", true, 70, 3000, 3000,
         |s| s.status() == Status::Conflict && display::target_kelvin() == 3000 && !s.overlay_hidden);
     assert_eq!(*m::CURRENT.lock().unwrap(), external);
+    // Even if both screen acquisition and subsequent Gamma fail, full
+    // brightness cannot turn the ordinary window into software warmth.
+    g::FAIL.store(true, Ordering::SeqCst);
+    sim.until("conflict plus Gamma rejection", true, 100, 3200, 3000,
+        |s| s.status() == Status::Conflict && s.overlay_hidden
+            && display::last_gamma_result() == (false, false));
+    assert!(!color_filter::screen_covers_overlay());
+    assert_eq!(*m::CURRENT.lock().unwrap(), external);
+    g::FAIL.store(false, Ordering::SeqCst);
     *m::CURRENT.lock().unwrap() = IDENTITY;
     for _ in 0..15 { sim.tick(true, 70, 3000); std::thread::sleep(Duration::from_millis(10)); }
     assert_eq!(sim.status(), Status::Conflict, "no unsolicited acquisition after fallback");

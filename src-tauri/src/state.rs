@@ -351,7 +351,10 @@ impl Default for TimerState {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EyeInfo {
+    /// At least one Gamma API call in the most recent attempt was accepted.
     pub gamma_supported: bool,
+    /// Every attempted/enumerated Gamma call was accepted, not visual proof.
+    pub gamma_all_accepted: bool,
     pub gamma_applied: bool,
     /// Most recent Magnification API worker result, not proof of physical colour.
     pub color_vision_status: &'static str,
@@ -392,6 +395,7 @@ pub struct Runtime {
     pub settings: Settings,
     pub timer: TimerState,
     pub gamma_supported: bool,
+    pub gamma_all_accepted: bool,
     pub gamma_applied: bool,
     pub scheduled: bool,
     /// Coordinates the legacy gamma/overlay and the optional screen matrix.
@@ -434,6 +438,7 @@ impl Runtime {
             settings,
             timer,
             gamma_supported: true,
+            gamma_all_accepted: true,
             gamma_applied: false,
             scheduled: false,
             screen_handoff: crate::screen_handoff::Handoff::default(),
@@ -487,6 +492,7 @@ impl Runtime {
             timer,
             eye: EyeInfo {
                 gamma_supported: self.gamma_supported,
+                gamma_all_accepted: self.gamma_all_accepted,
                 gamma_applied: self.gamma_applied && self.settings.eye.enabled && !paused_by_whitelist,
                 color_vision_status: crate::color_filter::status().as_str(),
                 screen_filter_status: self.screen_handoff.status(crate::color_filter::screen_status()).as_str(),

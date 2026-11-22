@@ -75,6 +75,15 @@ ok(!colorTarget.includes('eye.enabled') && colorTarget.includes('screen,'), 'col
 ok(engine.includes('cover_windows_menus && rt.settings.eye.enabled && !paused_by_whitelist'), 'optional fullscreen dimmer follows eye switch and color-safe');
 const handoff = read('src-tauri/src/screen_handoff.rs');
 const gamma = read('src-tauri/src/display.rs');
+const overlayPolicy = read('src-tauri/src/overlay_policy.rs');
+const dimmer = read('src/windows/DimmerOverlayWindow.tsx');
+const ordinaryTarget = sliceBetween(engine, 'let overlay_visible =', ';');
+ok(overlayPolicy.includes('enabled && !color_safe_active && brightness < 100'), 'ordinary overlay policy is brightness-only');
+ok(!ordinaryTarget.includes('gamma_supported') && !ordinaryTarget.includes('target,'), 'Gamma status and Kelvin cannot create the ordinary overlay');
+ok(!dimmer.includes('gammaSupported') && !dimmer.includes('targetKelvin') && !dimmer.includes('mixBlendMode'), 'ordinary dimmer contains no driver-dependent warmth layer');
+ok(dimmer.includes('rgba(0, 0, 0, ${dim})') && dimmer.includes('screenFilterCoversOverlay'), 'black dimming and screen handoff remain wired');
+ok(engine.includes('display::last_gamma_result()') && state.includes('gamma_all_accepted: self.gamma_all_accepted'), 'complete and partial Gamma API rejection reach the snapshot');
+ok(gamma.includes('report_gamma_result(result)') && gamma.includes('GAMMA_RESULT.load(Ordering::SeqCst)'), 'UI reads a coherent result pair after native writes');
 ok(engine.includes('display::hold_neutral_for_fullscreen') && engine.includes('ScreenTarget::new(handoff.request_screen, brightness, target)'), 'opt-in sends warmth and dimming to one matrix only through the gamma handoff');
 ok(handoff.includes('NeutralState::Ready') && handoff.includes('overlay_hidden') && win.includes('overlay_hidden_confirmed()'), 'handoff waits for neutral gamma and a confirmed hidden overlay');
 ok(gamma.includes('MAY_HAVE_OWN_WARMTH') && gamma.includes('result.all') && gamma.includes('FULLSCREEN_NEUTRAL_ACK'), 'partial-device failures cannot be mistaken for a safe neutral reset');

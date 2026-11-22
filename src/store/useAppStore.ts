@@ -88,6 +88,7 @@ const empty: AppSnapshot = {
   },
   eye: {
     gammaSupported: true,
+    gammaAllAccepted: true,
     gammaApplied: false,
     colorVisionStatus: "off",
     screenFilterStatus: "off",
