@@ -14,8 +14,13 @@ mod state;
 #[cfg(test)]
 #[path = "../../../src-tauri/src/color_vision.rs"]
 mod color_vision;
+#[cfg(test)]
+#[path = "../../../src-tauri/src/screen_handoff.rs"]
+mod screen_handoff;
 #[cfg(test)] mod color_filter {
     pub fn status() -> super::color_vision::Status { super::color_vision::Status::Off }
+    pub fn screen_status() -> super::color_vision::Status { super::color_vision::Status::Off }
+    pub fn screen_covers_overlay() -> bool { false }
 }
 #[cfg(test)] mod analytics { pub fn epoch() -> u64 { 0 } }
 #[cfg(test)] mod display {
@@ -44,6 +49,31 @@ mod tests {
         assert!(!settings.system.sound_enabled, "fresh installations are silent");
         assert_eq!(settings.system.widget_hover_delay_ms, 2000);
         assert_eq!(settings.system.widget_hover_delay_revision, 1);
+    }
+
+    #[test]
+    fn fullscreen_menu_coverage_is_opt_in_and_preserves_old_preferences() {
+        for value in [json!({}), json!({"eye": {"kelvin": 3300, "brightness": 72}})] {
+            let loaded: super::state::Settings = serde_json::from_value(value).unwrap();
+            assert!(!loaded.eye.cover_windows_menus);
+        }
+        for malformed in [json!(null), json!("true"), json!(1), json!({"x": true})] {
+            let loaded: super::state::Settings = serde_json::from_value(json!({
+                "eye": {"coverWindowsMenus": malformed, "kelvin": 3300, "brightness": 72},
+                "system": {"soundEnabled": true}
+            })).unwrap();
+            assert!(!loaded.eye.cover_windows_menus);
+            assert_eq!(loaded.eye.kelvin, 3300); assert_eq!(loaded.eye.brightness, 72);
+            assert!(loaded.system.sound_enabled);
+        }
+        let saved: super::state::Settings = serde_json::from_value(json!({
+            "eye": {"coverWindowsMenus": true, "colorVisionProfile": "tritanopia"},
+            "system": {"widgetHoverDelayMs": 2000, "widgetHoverDelayRevision": 1}
+        })).unwrap();
+        let loaded: super::state::Settings = serde_json::from_value(serde_json::to_value(&saved).unwrap()).unwrap();
+        assert!(loaded.eye.cover_windows_menus);
+        assert_eq!(loaded.eye.color_vision_profile, "tritanopia");
+        assert_eq!(loaded.system.widget_hover_delay_ms, 2000);
     }
 
     #[test]

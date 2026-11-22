@@ -1,6 +1,6 @@
-//! Keep ChashmYar's own notification windows *below* the active software
-//! dimmer in the same Win32 Z-order transaction that shows/activates them.
-//! The overlay stays click-through and the notifications remain focusable.
+//! Keep ChashmYar's notification windows and floating widget *below* the active
+//! software dimmer in the same Win32 Z-order transaction that moves, shows or
+//! activates them. The overlay remains click-through and inputs are unchanged.
 //! Unrelated applications continue to use the existing WinEvent fallback.
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
@@ -114,6 +114,8 @@ mod native {
         const SW_HIDE: i32 = 0;
         const GW_HWNDPREV: u32 = 3;
         const HWND_TOPMOST: isize = -1;
+        #[repr(C)]
+        struct Rect { left: i32, top: i32, right: i32, bottom: i32 }
         #[link(name = "user32")]
         extern "system" {
             fn CreateWindowExW(ex: u32, class: *const u16, title: *const u16, style: u32,
@@ -122,6 +124,7 @@ mod native {
             fn ShowWindow(hwnd: isize, command: i32) -> i32;
             fn DestroyWindow(hwnd: isize) -> i32;
             fn GetWindow(hwnd: isize, command: u32) -> isize;
+            fn GetWindowRect(hwnd: isize, rect: *mut Rect) -> i32;
             fn SetForegroundWindow(hwnd: isize) -> i32;
             fn GetForegroundWindow() -> isize;
         }
@@ -151,6 +154,14 @@ mod native {
             assert!(overlay_is_above(popup, filter), "first show must not put the popup above the filter");
             unsafe { SetWindowPos(popup, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); }
             assert!(overlay_is_above(popup, filter), "a subsequent topmost promotion must remain behind the filter");
+            // A widget-like move plus promotion must retain requested geometry
+            // while the subclass changes only the Z-order. This does not emulate
+            // WebView2 mouse dragging; that remains an interactive Windows test.
+            assert_ne!(unsafe { SetWindowPos(popup, HWND_TOPMOST, 31, 42, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE) }, 0);
+            let mut rect = Rect { left: 0, top: 0, right: 0, bottom: 0 };
+            assert_ne!(unsafe { GetWindowRect(popup, &mut rect) }, 0);
+            assert_eq!((rect.left, rect.top), (31, 42));
+            assert!(overlay_is_above(popup, filter), "widget move and topmost promotion stay behind the filter");
             // A background CI session can deny foreground activation. Where it
             // is permitted, exercise the same native raise used by a click.
             if unsafe { SetForegroundWindow(popup) } != 0 && unsafe { GetForegroundWindow() } == popup {

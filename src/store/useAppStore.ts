@@ -90,6 +90,8 @@ const empty: AppSnapshot = {
     gammaSupported: true,
     gammaApplied: false,
     colorVisionStatus: "off",
+    screenFilterStatus: "off",
+    screenFilterCoversOverlay: false,
     captureExcluded: false,
     effectiveKelvin: DEFAULT_SETTINGS.eye.kelvin,
     targetKelvin: DEFAULT_SETTINGS.eye.kelvin,

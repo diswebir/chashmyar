@@ -54,7 +54,7 @@ ok(existsSync('src-tauri/vendor/tao/LICENSE') && existsSync('src-tauri/vendor/ta
 ok(win.includes('p::EVENT_OBJECT_CREATE') && win.includes('p::EVENT_SYSTEM_CAPTURESTART'), 'earlier popup signals are registered');
 ok(win.includes('OVERLAY_BURST_REQUESTED') && win.includes('SWP_ASYNCWINDOWPOS') && win.includes('SWP_NOACTIVATE'), 'overlay remains asynchronous and nonactivating');
 ok(win.includes('WDA_EXCLUDEFROMCAPTURE') && win.includes('set_ignore_cursor_events(true)'), 'capture request and click-through behavior remain in place');
-for (const label of ['snooze', 'coach', 'update_notice']) {
+for (const label of ['micro', 'snooze', 'coach', 'update_notice']) {
   ok(sliceBetween(win, `if let Some(w) = &${label}`, '\n    }').includes('protect_notification_layer(app, w);'), `${label} registers same-thread popup protection`);
 }
 ok(popupLayer.includes('WM_WINDOWPOSCHANGING') && popupLayer.includes('WM_SHOWWINDOW') && popupLayer.includes('pos.insert_after = filter'), 'own popup is ordered below the overlay before show/activation completes');
@@ -71,7 +71,16 @@ for (const api of ['MagInitialize', 'MagGetFullscreenColorEffect', 'MagSetFullsc
 ok(colorFilter.includes('#[cfg(all(windows, not(test)))]') && colorFilter.includes('#[cfg(test)]'), 'native backend is isolated from standalone fake-driver tests');
 const colorTarget = sliceBetween(engine, 'crate::color_filter::set_target(', ');');
 ok(colorTarget.includes('color_vision_profile') && colorTarget.includes('color_vision_strength') && colorTarget.includes('paused_by_whitelist'), 'vision target uses saved settings and color-safe state');
-ok(!colorTarget.includes('eye.enabled'), 'colour-vision target does not depend on the warm-light switch');
+ok(!colorTarget.includes('eye.enabled') && colorTarget.includes('screen,'), 'colour vision stays independent while screen target shares the same worker');
+ok(engine.includes('cover_windows_menus && rt.settings.eye.enabled && !paused_by_whitelist'), 'optional fullscreen dimmer follows eye switch and color-safe');
+const handoff = read('src-tauri/src/screen_handoff.rs');
+const gamma = read('src-tauri/src/display.rs');
+ok(engine.includes('display::hold_neutral_for_fullscreen') && engine.includes('ScreenTarget::new(handoff.request_screen, brightness, target)'), 'opt-in sends warmth and dimming to one matrix only through the gamma handoff');
+ok(handoff.includes('NeutralState::Ready') && handoff.includes('overlay_hidden') && win.includes('overlay_hidden_confirmed()'), 'handoff waits for neutral gamma and a confirmed hidden overlay');
+ok(gamma.includes('MAY_HAVE_OWN_WARMTH') && gamma.includes('result.all') && gamma.includes('FULLSCREEN_NEUTRAL_ACK'), 'partial-device failures cannot be mistaken for a safe neutral reset');
+ok(colorFilter.includes('failed_unowned_screen') && colorFilter.includes('!SCREEN_COVERED.load(Ordering::SeqCst)'), 'unowned screen failures do not retry behind the handoff');
+ok(engine.includes('!crate::color_filter::screen_covers_overlay()') && colorFilter.includes('controller.owns_screen_effect() || pending_screen'), 'overlay handoff tracks ownership and pending native writes');
+ok(state.includes('cover_windows_menus: false') && state.includes('read_cover_windows_menus'), 'fullscreen mode is opt-in and malformed saved values fail closed');
 ok(state.includes('color_vision_profile: "off".into()') && state.includes('color_vision_strength: 60'), 'saved-settings default is opt-in');
 ok(state.includes('crate::color_filter::status().as_str()'), 'native worker status enters the serialized snapshot');
 ok(persistence.includes('settings.eye.normalize_color_vision()') && commands.match(/normalize_color_vision\(\)/g)?.length >= 2, 'load, full update and patch normalize vision settings');

@@ -49,6 +49,7 @@ import { t } from "../lib/i18n";
 import { useUpdateStatus } from "../lib/updates";
 import UpdateCard from "../components/UpdateCard";
 import ColorVisionCard from "../components/ColorVisionCard";
+import SystemMenuFilter from "../components/SystemMenuFilter";
 import AnalyticsTab from "../components/AnalyticsTab";
 import { EyeExerciseCanvas, STRETCHES, StretchIllustration } from "../components/exercises";
 import brandMark from "../../src-tauri/icons/128x128.png";
@@ -107,6 +108,8 @@ export default function SettingsWindow() {
   const [newEntry, setNewEntry] = useState("");
   const { status: updateStatus, check: checkUpdates } = useUpdateStatus();
   const { settings, timer, eye } = snapshot;
+  // This is an accepted request, not proof of a physical display appearance.
+  const screenMatrixActive = eye.screenFilterStatus === "active" && eye.screenFilterCoversOverlay;
 
   useEffect(() => {
     let disposed = false;
@@ -207,7 +210,7 @@ export default function SettingsWindow() {
           {settings.eye.enabled ? (
             <>
               <Sun size={12} className="text-amber-300" />
-              <span className="digits">{toLocalDigits(eye.effectiveKelvin)}K</span>
+              <span className="digits">{toLocalDigits(screenMatrixActive ? eye.targetKelvin : eye.effectiveKelvin)}K</span>
             </>
           ) : (
             <>
@@ -305,8 +308,9 @@ export default function SettingsWindow() {
             </div>
             <div className="mt-1.5 flex items-center justify-between text-slate-400">
               <span>{t("منبع دما")}</span>
-              <span className={eye.gammaSupported ? "text-emerald-300" : "text-amber-300"}>
-                {eye.gammaSupported ? t("Gamma Ramp سخت‌افزاری") : t("لایه نرم‌افزاری جایگزین")}
+              <span className={screenMatrixActive || eye.gammaSupported ? "text-emerald-300" : "text-amber-300"}>
+                {screenMatrixActive ? t("افکت تمام‌صفحه ویندوز")
+                  : eye.gammaSupported ? t("Gamma Ramp سخت‌افزاری") : t("لایه نرم‌افزاری جایگزین")}
               </span>
             </div>
           </div>
@@ -539,18 +543,22 @@ export default function SettingsWindow() {
                         from="#334155"
                         to="#e2e8f0"
                       />
+                      <SystemMenuFilter />
                       <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3 text-[11px] leading-6 text-slate-400">
                         {t("وضعیت موتور رنگ:")}{" "}
-                        <b className={eye.gammaSupported ? "text-emerald-300" : "text-amber-300"}>
-                          {eye.gammaSupported
-                            ? t("درایور درخواست Gamma را پذیرفت؛ اعمال رنگ تضمین نمی‌شود")
+                        <b className={screenMatrixActive || eye.gammaSupported ? "text-emerald-300" : "text-amber-300"}>
+                          {screenMatrixActive ? t("گرما و تیرگی در افکت تمام‌صفحه درخواست شده‌اند؛ ظاهر تضمین نمی‌شود")
+                            : eye.gammaSupported ? t("درایور درخواست Gamma را پذیرفت؛ اعمال رنگ تضمین نمی‌شود")
                             : t("درایور GPU اجازه تغییر Gamma را نداد")}
                         </b>
-                        {!eye.gammaSupported ? t("— لایه گرمای نرم‌افزاری فعال شد.") : ""}
+                        {!eye.gammaSupported && !eye.screenFilterCoversOverlay
+                          ? t("— لایه گرمای نرم‌افزاری فعال شد.") : ""}
                         <p className="mt-2" data-testid="capture-exclusion-status">
-                          {eye.captureExcluded
-                            ? t("لایه در روش‌های ضبط سازگار پنهان می‌شود؛ نتیجه را در ابزار ضبط خود بررسی کنید.")
-                            : t("پنهان‌سازی لایه از ضبط در این سیستم تأیید نشد؛ تصویر یا ویدئو ممکن است فیلتر را نشان دهد.")}
+                          {eye.screenFilterCoversOverlay
+                            ? t("پنهان‌سازی پنجره شامل افکت تمام‌صفحه نیست؛ تصویر و ضبط را با ابزار خود بررسی کنید.")
+                            : eye.captureExcluded
+                              ? t("لایه در روش‌های ضبط سازگار پنهان می‌شود؛ نتیجه را در ابزار ضبط خود بررسی کنید.")
+                              : t("پنهان‌سازی لایه از ضبط در این سیستم تأیید نشد؛ تصویر یا ویدئو ممکن است فیلتر را نشان دهد.")}
                         </p>
                       </div>
                     </div>

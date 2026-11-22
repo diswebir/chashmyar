@@ -13,6 +13,7 @@ try {
     ['gamma_logic', 'src-tauri/src/gamma_logic.rs'],
     ['color_vision', 'src-tauri/src/color_vision.rs'],
     ['color_filter_worker', 'tests/color-filter-worker.rs'],
+    ['screen_handoff', 'tests/screen-handoff.rs'],
     ['coalesced_signal', 'src-tauri/src/coalesced_signal.rs'],
     ['foreground_match', 'src-tauri/src/foreground_match.rs'],
     ['update_policy', 'src-tauri/src/update_policy.rs'],

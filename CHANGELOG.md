@@ -2,6 +2,13 @@
 
 Changes to the application are recorded here. Version headers describe source baselines; automatic release tags may differ when newer tags already exist.
 
+## 2.4.10 — source baseline
+
+### Widget and system-menu coverage
+- Apply the same GUI-thread Z-order subclass used by the app's notifications to the floating/docked widget. Moves and activation retain normal geometry and input while the active click-through overlay is kept above it. The two-second docked hover preference is unchanged. A Wine HWND smoke test is not interactive Windows/WebView2 validation.
+- Add an **off-by-default** experimental "Cover Windows menus" option for both warmth and software dimming, composed with colour vision in one fullscreen Magnification matrix. A serialized handoff drains and neutralizes this app's Gamma writes and confirms the overlay hidden before acquisition; it waits for matrix release before restoring the legacy path. Detectable conflicts, incomplete neutral resets or errors fall back where safe. API acknowledgements and enumerated devices are not proof of physical appearance.
+- Report API status and capture limitations rather than promising real-world coverage. Magnifier/other filters, Gamma silent failures, HDR, multi-monitor, secure desktop, games and captures may behave differently. The optional matrix has different visual/transition and capture characteristics from the overlay. See [the Persian Windows test and release guide](UPDATE_2.4.10_FA.md). Real Windows drag, Start, restoration and updating have not been verified here.
+
 ## 2.4.9 — source baseline
 
 ### Widget

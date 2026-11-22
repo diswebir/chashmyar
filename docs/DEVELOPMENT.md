@@ -60,7 +60,7 @@ The installer can download WebView2 when needed. Tauri updater signatures verify
 ```powershell
 npm run test:logic      # Rust policies; Windows also runs small native HWND/swap smoke tests
 npm run test:windows-policy # source-integrity checks, not an interactive Windows test
-npm run test:compat     # saved data; on non-Windows also a fake-driver worker/shutdown test
+npm run test:compat     # saved data; on non-Windows also fake-driver worker, handoff and shutdown tests
 npm run test:release    # version, checksums and auto-release tests with local Git + fake gh
 npm run test:branding   # approved master/derived checksums, PNGs, ICO frames and Tauri references
 npm run test:docs       # local documentation links; does not fetch external sites
@@ -82,7 +82,7 @@ node scripts/version.mjs check
 # node scripts/version.mjs set 2.5.0
 ```
 
-The automatic workflow uses the source baseline itself if it is greater than all existing stable tags; otherwise it allocates the patch after the greatest stable tag. It applies the version to a tag-only child commit, not to `main`; the child may have an unchanged tree when the source already contains the selected version. For example, baseline `2.4.9` with latest tag `v2.4.8` yields `v2.4.9`, then `v2.4.10`. A deliberate `2.5.0` baseline yields `v2.5.0` when all existing stable tags are lower. Do not bump or tag manually for normal pushes. `set` synchronizes the npm package and lockfile, Tauri config, Cargo manifest and the application's entry in Cargo.lock; edit `CHANGELOG.md` separately. `node scripts/version.mjs check --tag vX.Y.Z` succeeds on the matching release-tag checkout, not necessarily on baseline `main`. See [the Persian release guide](RELEASE_GUIDE_FA.md) for limits and recovery.
+The automatic workflow uses the source baseline itself if it is greater than all existing stable tags; otherwise it allocates the patch after the greatest stable tag. It applies the version to a tag-only child commit, not to `main`; the child may have an unchanged tree when the source already contains the selected version. For example, baseline `2.4.10` with latest tag `v2.4.9` yields `v2.4.10`, then `v2.4.11`. A deliberate `2.5.0` baseline yields `v2.5.0` when all existing stable tags are lower. Do not bump or tag manually for normal pushes. `set` synchronizes the npm package and lockfile, Tauri config, Cargo manifest and the application's entry in Cargo.lock; edit `CHANGELOG.md` separately. `node scripts/version.mjs check --tag vX.Y.Z` succeeds on the matching release-tag checkout, not necessarily on baseline `main`. See [the Persian release guide](RELEASE_GUIDE_FA.md) for limits and recovery.
 
 ## Dependencies and notices
 

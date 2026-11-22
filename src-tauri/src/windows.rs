@@ -161,6 +161,10 @@ pub fn create_all(app: &AppHandle) -> tauri::Result<()> {
     );
     if let Some(w) = &micro {
         let _ = w.set_ignore_cursor_events(false);
+        // Native dragging/activation can promote this topmost window above the
+        // dimmer. Keep it behind in the same WINDOWPOS transaction, without
+        // changing pointer handling, geometry, focus or the hover delay.
+        protect_notification_layer(app, w);
     }
 
     /* ------------------------------ snooze OSD ----------------------------- */
@@ -742,10 +746,21 @@ pub fn hide_snooze(app: &AppHandle) {
 // the newest requested state; no runtime mutex is held while it calls Tauri.
 static OVERLAY_TARGET: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static OVERLAY_WORKER_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+// The window is created hidden. Once a show is requested, do not claim it is
+// hidden again until the overlay worker has actually verified that state.
+static OVERLAY_HIDDEN_CONFIRMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+// Serializes the worker with the public show/hide IPC path. The runtime never
+// takes this lock, because the calls inside may wait for the GUI event loop.
+static OVERLAY_SYNC_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+pub fn overlay_hidden_confirmed() -> bool {
+    !OVERLAY_TARGET.load(Ordering::Acquire) && OVERLAY_HIDDEN_CONFIRMED.load(Ordering::Acquire)
+}
 
 pub fn set_overlay_target(visible: bool) {
     let _control = OVERLAY_CONTROL_LOCK.lock();
     if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) { return; }
+    if visible { OVERLAY_HIDDEN_CONFIRMED.store(false, Ordering::Release); }
     crate::popup_layer::set_filter_enabled(visible);
     if OVERLAY_TARGET.swap(visible, Ordering::AcqRel) != visible {
         // Durable unpark also covers a state change just before the worker parks.
@@ -772,7 +787,7 @@ pub fn ensure_overlay_worker(app: &AppHandle) {
             if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) { break; }
             let desired = OVERLAY_TARGET.load(Ordering::Acquire);
             let now = now_ms();
-            if desired != last {
+            if desired != last || (!desired && !OVERLAY_HIDDEN_CONFIRMED.load(Ordering::Acquire)) {
                 sync_overlay(&app, desired);
                 last = desired;
                 last_bounds = if desired { virtual_desktop_bounds() } else { None };
@@ -784,9 +799,14 @@ pub fn ensure_overlay_worker(app: &AppHandle) {
                 }
             }
             if !desired {
-                // Previously this thread woke 20 times a second even when the
-                // filter was absent. State changes and shutdown unpark it.
-                std::thread::park();
+                // Retry a failed/unconfirmed hide, but park entirely once the
+                // old window is known hidden. The handoff will not acquire a
+                // fullscreen matrix until this acknowledgement is visible.
+                if OVERLAY_HIDDEN_CONFIRMED.load(Ordering::Acquire) {
+                    std::thread::park();
+                } else {
+                    std::thread::park_timeout(Duration::from_millis(250));
+                }
                 continue;
             }
             if OVERLAY_BURST_REQUESTED.swap(false, Ordering::AcqRel) { burst.start(now); }
@@ -811,23 +831,30 @@ pub fn ensure_overlay_worker(app: &AppHandle) {
     });
 }
 
-/// Shows/hides the click-through dimmer overlay.
+/// Shows/hides the click-through dimmer overlay. A hidden acknowledgement is
+/// published only after a successful visibility query, never after a guessed
+/// timeout or a failed hide. This function runs outside the runtime mutex.
 pub fn sync_overlay(app: &AppHandle, visible: bool) {
+    let _sync = OVERLAY_SYNC_LOCK.lock();
     if let Some(w) = get(app, DIMMER) {
         let _ = w.set_ignore_cursor_events(true);
-        let already = w.is_visible().unwrap_or(false);
-        if visible == already {
-            return;
-        }
         if visible {
             if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) || !OVERLAY_TARGET.load(Ordering::Acquire) { return; }
+            OVERLAY_HIDDEN_CONFIRMED.store(false, Ordering::Release);
+            if w.is_visible().unwrap_or(false) { return; }
             fit_overlay(app, &w, virtual_desktop_bounds());
             if OVERLAY_EVENTS_STOPPED.load(Ordering::Acquire) || !OVERLAY_TARGET.load(Ordering::Acquire) { return; }
             let _ = w.show();
             let _ = w.set_always_on_top(true);
         } else {
-            let _ = w.hide();
+            if !matches!(w.is_visible(), Ok(false)) { let _ = w.hide(); }
+            let hidden = matches!(w.is_visible(), Ok(false));
+            // A concurrent show request invalidates the observation.
+            OVERLAY_HIDDEN_CONFIRMED.store(hidden && !OVERLAY_TARGET.load(Ordering::Acquire), Ordering::Release);
         }
+    } else if !visible {
+        // A window that failed to be created cannot double the matrix.
+        OVERLAY_HIDDEN_CONFIRMED.store(!OVERLAY_TARGET.load(Ordering::Acquire), Ordering::Release);
     }
 }
 

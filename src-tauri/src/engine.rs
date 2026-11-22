@@ -45,25 +45,44 @@ pub fn refresh(app: &AppHandle, shared: &Shared) -> Snapshot {
         };
 
         // Reflect the last driver result rather than assuming gamma is always
-        // supported. A failed warm ramp must also activate the fallback layer.
+        // supported. In legacy mode an explicit failure activates the fallback.
         rt.gamma_supported = display::gamma_available();
-        // The worker honors the existing saved transition duration (2 s by
-        // default); identical timer snapshots do not restart the transition.
-        display::set_target(target, rt.settings.eye.transition_ms);
-        // Full-screen colour-vision assistance is independent of the warm
-        // filter switch, but yields to the same Color-Safe whitelist.
+        let wants_screen = rt.settings.eye.cover_windows_menus && rt.settings.eye.enabled && !paused_by_whitelist
+            && (brightness < 100 || target < display::NEUTRAL_KELVIN);
+        let neutral = if display::fullscreen_neutral_ready() {
+            crate::screen_handoff::NeutralState::Ready
+        } else if display::fullscreen_neutral_failed() {
+            crate::screen_handoff::NeutralState::Failed
+        } else {
+            crate::screen_handoff::NeutralState::Pending
+        };
+        // All hardware/window operations remain on their own workers. This
+        // policy only publishes requests while holding the runtime mutex.
+        let handoff = rt.screen_handoff.step(wants_screen, neutral,
+            crate::color_filter::screen_status(), crate::color_filter::screen_covers_overlay(),
+            windows::overlay_hidden_confirmed());
+        if handoff.hold_gamma_neutral {
+            display::hold_neutral_for_fullscreen(rt.settings.eye.transition_ms);
+        } else {
+            // The existing legacy transition duration remains unchanged.
+            display::set_target(target, rt.settings.eye.transition_ms);
+        }
+        // Colour vision stays independent of the eye switch, but both screen
+        // warmth and dimming share its single Magnification worker/matrix.
+        let screen = crate::color_vision::ScreenTarget::new(handoff.request_screen, brightness, target);
         crate::color_filter::set_target(
             crate::color_vision::Profile::parse(&rt.settings.eye.color_vision_profile),
             rt.settings.eye.color_vision_strength,
             paused_by_whitelist,
+            screen,
         );
-        rt.last_gamma_kelvin = Some(target);
-        rt.gamma_applied = rt.gamma_supported && rt.settings.eye.enabled
+        rt.last_gamma_kelvin = Some(if handoff.hold_gamma_neutral { display::NEUTRAL_KELVIN } else { target });
+        rt.gamma_applied = !handoff.hold_gamma_neutral && rt.gamma_supported && rt.settings.eye.enabled
             && !paused_by_whitelist && target < display::NEUTRAL_KELVIN;
 
         let overlay_visible = crate::overlay_policy::needs_overlay(
             rt.settings.eye.enabled, paused_by_whitelist, brightness, rt.gamma_supported, target,
-        );
+        ) && !handoff.hide_overlay && !crate::color_filter::screen_covers_overlay();
         // Publish only an atomic target while holding the runtime lock. Calling
         // synchronous native window getters here can deadlock the UI thread.
         windows::set_overlay_target(overlay_visible);

@@ -96,7 +96,9 @@ function mockInitial(): AppSnapshot {
           system,
         },
         timer: { ...parsed.timer, running: false, paused: false, idlePaused: false },
-        eye: { ...parsed.eye, colorVisionStatus: parsed.eye?.colorVisionStatus ?? "off" },
+        eye: { ...parsed.eye, colorVisionStatus: parsed.eye?.colorVisionStatus ?? "off",
+          screenFilterStatus: parsed.eye?.screenFilterStatus ?? "off",
+          screenFilterCoversOverlay: parsed.eye?.screenFilterCoversOverlay ?? false },
       };
     }
   } catch {
@@ -130,6 +132,8 @@ function mockInitial(): AppSnapshot {
       gammaSupported: true,
       gammaApplied: true,
       colorVisionStatus: "off",
+      screenFilterStatus: "off",
+      screenFilterCoversOverlay: false,
       // A browser preview has no native display-affinity control.
       captureExcluded: false,
       effectiveKelvin: DEFAULT_SETTINGS.eye.kelvin,
@@ -146,6 +150,7 @@ let mock: AppSnapshot = mockInitial();
 // Browser tests may request a simulated status, but never change real display
 // colours. The card explicitly identifies the browser-only preview.
 const mockVisionScenario = new URLSearchParams(window.location.search).get("cvd");
+const mockScreenScenario = new URLSearchParams(window.location.search).get("screen");
 function refreshMockVision() {
   const eye = mock.settings.eye;
   if (!["off", "protanopia", "deuteranopia", "tritanopia"].includes(eye.colorVisionProfile)) eye.colorVisionProfile = "off";
@@ -158,6 +163,15 @@ function refreshMockVision() {
   else if (mockVisionScenario === "conflict" || mockVisionScenario === "error" || mockVisionScenario === "restoreError" || mockVisionScenario === "active") {
     mock.eye.colorVisionStatus = mockVisionScenario;
   } else mock.eye.colorVisionStatus = "unsupported";
+  // This status is a browser simulation only; it never changes the display.
+  if (typeof eye.coverWindowsMenus !== "boolean") eye.coverWindowsMenus = false;
+  const needsScreen = mock.eye.effectiveBrightness < 100 || mock.eye.targetKelvin < 6500;
+  if (!eye.coverWindowsMenus || !eye.enabled || !needsScreen) mock.eye.screenFilterStatus = "off";
+  else if (eye.colorSafeEnabled && mock.eye.whitelisted) mock.eye.screenFilterStatus = "paused";
+  else if (mockScreenScenario === "active" || mockScreenScenario === "pending" || mockScreenScenario === "conflict" || mockScreenScenario === "error" || mockScreenScenario === "restoreError") {
+    mock.eye.screenFilterStatus = mockScreenScenario;
+  } else mock.eye.screenFilterStatus = "unsupported";
+  mock.eye.screenFilterCoversOverlay = mock.eye.screenFilterStatus === "active" || mock.eye.screenFilterStatus === "pending";
 }
 refreshMockVision();
 // Browser-only simulation; native builds use Rust's signed updater state.
@@ -169,7 +183,7 @@ const scenarioPhase: UpdatePhase = updateScenario === "ready" || updateScenario 
   : updateScenario === "unconfigured" ? "unconfigured" : "idle";
 let mockUpdate: UpdateStatus = {
   revision: 0, phase: scenarioPhase,
-  version: ["ready", "downloading"].includes(scenarioPhase) ? "2.4.9" : null,
+  version: ["ready", "downloading"].includes(scenarioPhase) ? "2.4.11" : null,
   kind: updateKind, downloaded: scenarioPhase === "downloading" ? 50 : 100,
   total: 100, error: scenarioPhase === "error" ? "check" : null,
   buildMarker: "browser-mock",

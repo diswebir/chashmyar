@@ -1,6 +1,6 @@
 [package]
 name = "chashmyar"
-version = "2.4.9"
+version = "2.4.10"
 description = "ChashmYar — eye-care, screen dimmer and strict Pomodoro for Windows"
 authors = ["Reza Jantrani and ChashmYar contributors"]
 license = "MIT"

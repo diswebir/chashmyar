@@ -28,6 +28,8 @@ export interface EyeSettings {
   colorVisionProfile: ColorVisionProfile;
   /** Strength of the effect, not severity of the user's vision. */
   colorVisionStrength: number;
+  /** Opt-in fullscreen replacement for the dimmer and rejected-gamma warmth. */
+  coverWindowsMenus: boolean;
 }
 
 export interface TimerSettings {
@@ -118,6 +120,10 @@ export interface EyeInfo {
   gammaApplied: boolean;
   /** Most recent native API result; not proof of a physical display change. */
   colorVisionStatus: ColorVisionStatus;
+  /** Status of the optional fullscreen dimmer, sharing the colour-vision worker. */
+  screenFilterStatus: ColorVisionStatus;
+  /** Suppress overlay while the fullscreen effect is owned or being acquired. */
+  screenFilterCoversOverlay: boolean;
   /** Best-effort OS capture exclusion; not a guarantee for every recorder. */
   captureExcluded: boolean;
   /** interpolated value currently in the GPU LUT */
@@ -198,6 +204,7 @@ export const DEFAULT_SETTINGS: Settings = {
     transitionMs: 2000,
     colorVisionProfile: "off",
     colorVisionStrength: 60,
+    coverWindowsMenus: false,
   },
   timer: {
     workMinutes: 25,

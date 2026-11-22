@@ -31,13 +31,22 @@ static GAMMA_WORKER_THREAD: OnceLock<std::thread::Thread> = OnceLock::new();
 // This is the last API result, not proof that a driver actually applied the
 // ramp: Windows may silently reject a valid-looking ramp (especially in HDR).
 static GAMMA_AVAILABLE: AtomicBool = AtomicBool::new(true);
-// Store target and transition duration as one atomic value so rapid settings
-// changes cannot combine the target of one update with another duration.
+// Store target, duration and the fullscreen neutral hold in one atomic value.
+// Kelvin is at most 6500, so its highest bit is available for the hold flag.
+const FULLSCREEN_HOLD: u64 = 1 << 63;
 const fn gamma_config(kelvin: u32, duration_ms: u32) -> u64 {
     ((kelvin as u64) << 32) | duration_ms as u64
 }
+const fn config_kelvin(config: u64) -> u32 { ((config & !FULLSCREEN_HOLD) >> 32) as u32 }
 static GAMMA_CONFIG: AtomicU64 = AtomicU64::new(gamma_config(NEUTRAL_KELVIN, 2000));
-/// Kelvin last successfully reported to the LUT.
+// "Dirty" is deliberately conservative: even a warm API call reporting
+// failure may have changed one display. Only a fully successful neutral write
+// to all enumerated devices clears it. Gamma success can still be silent/false.
+static MAY_HAVE_OWN_WARMTH: AtomicBool = AtomicBool::new(false);
+static LAST_ALL_OK: AtomicBool = AtomicBool::new(false);
+static FULLSCREEN_NEUTRAL_ACK: AtomicBool = AtomicBool::new(false);
+static FULLSCREEN_NEUTRAL_FAILED: AtomicBool = AtomicBool::new(false);
+/// Kelvin last successfully reported to at least one LUT (not visual proof).
 static CURRENT: AtomicU32 = AtomicU32::new(NEUTRAL_KELVIN);
 const LERP_STEP_MS: u64 = 100;
 
@@ -106,8 +115,11 @@ pub fn build_ramp(kelvin: u32) -> Vec<u16> {
 /*                        Win32: apply to every display                       */
 /* -------------------------------------------------------------------------- */
 
+#[derive(Debug, Clone, Copy)]
+struct RampResult { any: bool, all: bool }
+
 #[cfg(windows)]
-fn push_ramp(ramp: &[u16]) -> bool {
+fn push_ramp(ramp: &[u16]) -> RampResult {
     use std::ffi::c_void;
     use windows::core::PCWSTR;
     use windows::Win32::Graphics::Gdi::{
@@ -117,9 +129,11 @@ fn push_ramp(ramp: &[u16]) -> bool {
     use windows::Win32::UI::ColorSystem::SetDeviceGammaRamp;
 
     let mut applied = false;
+    let mut all_applied = true;
     unsafe {
         // Every active display adapter gets its own DC so multi-monitor setups
-        // are warmed/cooled consistently.
+        // are warmed/cooled consistently. A partial reset must not be mistaken
+        // for a safe handoff merely because one adapter returned success.
         let mut index = 0u32;
         loop {
             let mut device = DISPLAY_DEVICEW::default();
@@ -136,26 +150,32 @@ fn push_ramp(ramp: &[u16]) -> bool {
             let name = PCWSTR(device.DeviceName.as_ptr());
             let hdc = CreateDCW(name, name, PCWSTR::null(), None);
             if hdc.is_invalid() {
+                all_applied = false;
                 continue;
             }
             let ok = SetDeviceGammaRamp(hdc, ramp.as_ptr() as *const c_void).as_bool();
             let _ = DeleteDC(hdc);
             applied |= ok;
+            all_applied &= ok;
         }
 
         // Fallback / primary DC (also covers sessions where enumeration fails).
+        // Require it too for the conservative all-displays handoff check.
         let hdc = GetDC(None);
         if !hdc.is_invalid() {
             let ok = SetDeviceGammaRamp(hdc, ramp.as_ptr() as *const c_void).as_bool();
             ReleaseDC(None, hdc);
             applied |= ok;
+            all_applied &= ok;
+        } else {
+            all_applied = false;
         }
     }
-    applied
+    RampResult { any: applied, all: applied && all_applied }
 }
 
 #[cfg(all(not(windows), not(test)))]
-fn push_ramp(_ramp: &[u16]) -> bool { true }
+fn push_ramp(_ramp: &[u16]) -> RampResult { RampResult { any: true, all: true } }
 
 // Host-only test double: never compiled into the Windows application. It lets
 // the real worker be exercised for retries, idle parking, and shutdown races.
@@ -163,13 +183,15 @@ fn push_ramp(_ramp: &[u16]) -> bool { true }
 pub(crate) mod test_driver {
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize};
     pub static FAIL: AtomicBool = AtomicBool::new(false);
+    // At least one display reports success, but at least one reports failure.
+    pub static PARTIAL: AtomicBool = AtomicBool::new(false);
     pub static CALLS: AtomicUsize = AtomicUsize::new(0);
     pub static DELAY_MS: AtomicU32 = AtomicU32::new(0);
     pub static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
     pub static LAST_NEUTRAL: AtomicBool = AtomicBool::new(true);
 }
 #[cfg(all(not(windows), test))]
-fn push_ramp(ramp: &[u16]) -> bool {
+fn push_ramp(ramp: &[u16]) -> RampResult {
     use test_driver::*;
     CALLS.fetch_add(1, Ordering::SeqCst);
     IN_FLIGHT.store(true, Ordering::SeqCst);
@@ -177,27 +199,43 @@ fn push_ramp(ramp: &[u16]) -> bool {
     if delay != 0 { std::thread::sleep(Duration::from_millis(u64::from(delay))); }
     let ok = !FAIL.load(Ordering::SeqCst);
     if ok { LAST_NEUTRAL.store(ramp[767] == 65535, Ordering::SeqCst); }
+    let all = ok && !PARTIAL.load(Ordering::SeqCst);
     IN_FLIGHT.store(false, Ordering::SeqCst);
-    ok
+    RampResult { any: ok, all }
 }
 
-// Caller holds GAMMA_IO. Preserve CURRENT on failure: it is the last reported
-// successful value and permits a later neutral restore to be retried.
+// Caller holds GAMMA_IO. Preserve CURRENT on complete failure. Even a failed
+// warm call is considered dirty because a subset of displays might have changed.
 fn apply_gamma_locked(kelvin: u32) -> bool {
     let kelvin = kelvin.clamp(MIN_KELVIN, NEUTRAL_KELVIN);
-    let ok = push_ramp(&build_ramp(kelvin));
-    GAMMA_AVAILABLE.store(ok, Ordering::SeqCst);
-    if ok {
+    let warm = kelvin < NEUTRAL_KELVIN;
+    if warm { MAY_HAVE_OWN_WARMTH.store(true, Ordering::SeqCst); }
+    let result = push_ramp(&build_ramp(kelvin));
+    GAMMA_AVAILABLE.store(result.any, Ordering::SeqCst);
+    LAST_ALL_OK.store(result.all, Ordering::SeqCst);
+    if result.any {
         CURRENT.store(kelvin, Ordering::SeqCst);
-        TOUCHED.store(kelvin < NEUTRAL_KELVIN, Ordering::SeqCst);
+        TOUCHED.store(warm, Ordering::SeqCst);
     }
-    ok
+    if !warm && result.all { MAY_HAVE_OWN_WARMTH.store(false, Ordering::SeqCst); }
+    let config = GAMMA_CONFIG.load(Ordering::SeqCst);
+    if !warm && config & FULLSCREEN_HOLD != 0 && config_kelvin(config) == NEUTRAL_KELVIN {
+        // No prior ChashmYar warm write is also safe from *our* double tint,
+        // even when an unsupported driver cannot accept the neutral ramp.
+        // Other software, silent driver failures and unenumerated displays can
+        // still change the physical result; this is not an OS-level lock.
+        let safe = result.all || !MAY_HAVE_OWN_WARMTH.load(Ordering::SeqCst);
+        FULLSCREEN_NEUTRAL_FAILED.store(!safe, Ordering::SeqCst);
+        FULLSCREEN_NEUTRAL_ACK.store(safe, Ordering::SeqCst);
+    }
+    result.any
 }
 
 /// Applies a Kelvin value to the hardware LUT immediately (no interpolation).
 pub fn apply_gamma(kelvin: u32) -> bool {
     let _io = GAMMA_IO.lock();
-    if GAMMA_STOPPED.load(Ordering::SeqCst) && kelvin < NEUTRAL_KELVIN { return false; }
+    if kelvin < NEUTRAL_KELVIN && (GAMMA_STOPPED.load(Ordering::SeqCst)
+        || GAMMA_CONFIG.load(Ordering::SeqCst) & FULLSCREEN_HOLD != 0) { return false; }
     apply_gamma_locked(kelvin)
 }
 
@@ -208,21 +246,53 @@ pub fn gamma_available() -> bool { GAMMA_AVAILABLE.load(Ordering::SeqCst) }
 /// Kelvin last reported successfully to the LUT.
 pub fn current_kelvin() -> u32 { CURRENT.load(Ordering::SeqCst) }
 
-pub fn target_kelvin() -> u32 { (GAMMA_CONFIG.load(Ordering::SeqCst) >> 32) as u32 }
+pub fn target_kelvin() -> u32 { config_kelvin(GAMMA_CONFIG.load(Ordering::SeqCst)) }
 
 fn wake_lerp_worker() {
     if let Some(worker) = GAMMA_WORKER_THREAD.get() { worker.unpark(); }
 }
 
-/// Set the target and saved duration together; repeated identical snapshots do
-/// not reset the transition or wake an idle worker.
+/// Set the legacy gamma target. Repeated snapshots do not restart interpolation.
 pub fn set_target(kelvin: u32, duration_ms: u32) {
     if GAMMA_STOPPED.load(Ordering::SeqCst) { return; }
     let kelvin = kelvin.clamp(MIN_KELVIN, NEUTRAL_KELVIN);
     let next = gamma_config(kelvin, gamma_logic::transition_ms(duration_ms));
-    let changed = GAMMA_CONFIG.swap(next, Ordering::SeqCst) != next;
+    let previous = GAMMA_CONFIG.swap(next, Ordering::SeqCst);
+    if previous & FULLSCREEN_HOLD != 0 {
+        FULLSCREEN_NEUTRAL_ACK.store(false, Ordering::SeqCst);
+        FULLSCREEN_NEUTRAL_FAILED.store(false, Ordering::SeqCst);
+    }
     spawn_lerp_worker();
-    if changed { wake_lerp_worker(); }
+    if previous != next { wake_lerp_worker(); }
+}
+
+/// Ask the same serial worker to drain any in-flight warm write and reset the
+/// GPU LUT before a fullscreen matrix may contain warmth. This neutralization
+/// is intentionally immediate: smooth cross-fading across independent APIs is
+/// not atomic and could transiently double the warmth on some displays.
+pub fn hold_neutral_for_fullscreen(duration_ms: u32) {
+    if GAMMA_STOPPED.load(Ordering::SeqCst) { return; }
+    let next = gamma_config(NEUTRAL_KELVIN, gamma_logic::transition_ms(duration_ms)) | FULLSCREEN_HOLD;
+    let previous = GAMMA_CONFIG.load(Ordering::SeqCst);
+    if previous & FULLSCREEN_HOLD == 0 {
+        FULLSCREEN_NEUTRAL_ACK.store(false, Ordering::SeqCst);
+        FULLSCREEN_NEUTRAL_FAILED.store(false, Ordering::SeqCst);
+    }
+    let previous = GAMMA_CONFIG.swap(next, Ordering::SeqCst);
+    spawn_lerp_worker();
+    if previous != next { wake_lerp_worker(); }
+}
+
+/// The ack means the serialized API handoff is safe from our own double tint;
+/// it cannot prove what the monitor displayed or whether other software changed
+/// gamma. It is only meaningful while the neutral hold remains requested.
+pub fn fullscreen_neutral_ready() -> bool {
+    GAMMA_CONFIG.load(Ordering::SeqCst) & FULLSCREEN_HOLD != 0
+        && FULLSCREEN_NEUTRAL_ACK.load(Ordering::SeqCst)
+}
+pub fn fullscreen_neutral_failed() -> bool {
+    GAMMA_CONFIG.load(Ordering::SeqCst) & FULLSCREEN_HOLD != 0
+        && FULLSCREEN_NEUTRAL_FAILED.load(Ordering::SeqCst)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -240,14 +310,34 @@ fn spawn_lerp_worker() {
         loop {
             if GAMMA_STOPPED.load(Ordering::SeqCst) { break; }
             let config = GAMMA_CONFIG.load(Ordering::SeqCst);
-            let target = (config >> 32) as u32;
+            let target = config_kelvin(config);
             let duration = config as u32;
+            if config & FULLSCREEN_HOLD != 0 {
+                active_config = None;
+                if fullscreen_neutral_ready() || fullscreen_neutral_failed() {
+                    std::thread::park();
+                    continue;
+                }
+                {
+                    let _io = GAMMA_IO.lock();
+                    // A pending older warm write has now finished. Re-check the
+                    // hold under the same I/O lock before resetting/acking.
+                    if GAMMA_STOPPED.load(Ordering::SeqCst)
+                        || GAMMA_CONFIG.load(Ordering::SeqCst) != config { continue; }
+                    let _ = apply_gamma_locked(NEUTRAL_KELVIN);
+                }
+                // Wake on changed config. The next loop parks once the result is
+                // published; no polling or surprise warm write while held.
+                continue;
+            }
             let current = CURRENT.load(Ordering::SeqCst);
             if active_config != Some(config) {
                 transition = GammaTransition::new(current, target, now_ms(), duration);
                 active_config = Some(config);
             }
-            if !gamma_logic::needs_attempt(current, target, gamma_available(), NEUTRAL_KELVIN) {
+            let partial_neutral = target == NEUTRAL_KELVIN && MAY_HAVE_OWN_WARMTH.load(Ordering::SeqCst);
+            if !gamma_logic::needs_attempt(current, target, gamma_available(), NEUTRAL_KELVIN)
+                && !partial_neutral {
                 // No periodic 100 ms wakeups while settled. Unpark is durable,
                 // including when a new target arrives just before this call.
                 std::thread::park();
@@ -265,12 +355,12 @@ fn spawn_lerp_worker() {
                     || GAMMA_CONFIG.load(Ordering::SeqCst) != config { continue; }
                 apply_gamma_locked(next)
             };
-            if ok {
+            let incomplete_reset = next == NEUTRAL_KELVIN && MAY_HAVE_OWN_WARMTH.load(Ordering::SeqCst);
+            if ok && !incomplete_reset {
                 std::thread::park_timeout(Duration::from_millis(LERP_STEP_MS));
             } else {
-                // A rejecting driver previously caused 10 hardware attempts per
-                // second indefinitely. Retry at most once per two seconds, and
-                // wake immediately for a changed target or shutdown.
+                // A rejecting or partially restored driver must not be hammered
+                // ten times per second. A changed target wakes this backoff.
                 active_config = None;
                 std::thread::park_timeout(Duration::from_millis(gamma_logic::RETRY_DELAY_MS));
             }
@@ -297,9 +387,10 @@ pub fn spawn_reassert_loop() {
             if target_kelvin() >= NEUTRAL_KELVIN || current >= NEUTRAL_KELVIN
                 || !TOUCHED.load(Ordering::SeqCst) { false }
             else {
-                let ok = push_ramp(&build_ramp(current));
-                if !ok { GAMMA_AVAILABLE.store(false, Ordering::SeqCst); }
-                !ok
+                let result = push_ramp(&build_ramp(current));
+                LAST_ALL_OK.store(result.all, Ordering::SeqCst);
+                if !result.any { GAMMA_AVAILABLE.store(false, Ordering::SeqCst); }
+                !result.any
             }
         };
         if failed { wake_lerp_worker(); }
@@ -330,9 +421,10 @@ pub fn stop_and_restore_gamma() -> bool {
     GAMMA_CONFIG.store(gamma_config(NEUTRAL_KELVIN, 2000), Ordering::SeqCst);
     wake_lerp_worker();
     let _io = GAMMA_IO.lock();
-    let ok = apply_gamma_locked(NEUTRAL_KELVIN);
-    if !ok { crate::diag::log("gamma shutdown restore failed; watchdog remains armed"); }
-    ok
+    let _ = apply_gamma_locked(NEUTRAL_KELVIN);
+    let all = LAST_ALL_OK.load(Ordering::SeqCst);
+    if !all { crate::diag::log("gamma shutdown restore was not confirmed on every enumerated device; watchdog remains armed"); }
+    all
 }
 
 pub fn install_panic_hook() {

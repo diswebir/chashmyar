@@ -32,6 +32,15 @@ pub struct EyeSettings {
     /// Recolouring strength, not a diagnosis or severity of vision deficiency.
     #[serde(deserialize_with = "read_color_vision_strength")]
     pub color_vision_strength: u32,
+    /// Explicit opt-in: use the shared fullscreen matrix for software dimming
+    /// and warmth. Existing installations keep the old gamma/overlay method.
+    #[serde(deserialize_with = "read_cover_windows_menus")]
+    pub cover_windows_menus: bool,
+}
+
+fn read_cover_windows_menus<'de, D: serde::Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+    let value = serde_json::Value::deserialize(d)?;
+    Ok(value.as_bool().unwrap_or(false))
 }
 
 fn read_color_vision_profile<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
@@ -69,6 +78,7 @@ impl Default for EyeSettings {
             transition_ms: 2000,
             color_vision_profile: "off".into(),
             color_vision_strength: 60,
+            cover_windows_menus: false,
         }
     }
 }
@@ -345,6 +355,11 @@ pub struct EyeInfo {
     pub gamma_applied: bool,
     /// Most recent Magnification API worker result, not proof of physical colour.
     pub color_vision_status: &'static str,
+    /// Status of the optional screen effect (shares the vision worker/matrix).
+    pub screen_filter_status: &'static str,
+    /// The overlay is hidden for the fullscreen handoff or an owned effect;
+    /// do not render its tint again while this flag is set.
+    pub screen_filter_covers_overlay: bool,
     /// Windows accepted display-capture exclusion for the overlay. Some
     /// capture methods can still ignore it; never interpret this as a guarantee.
     pub capture_excluded: bool,
@@ -379,6 +394,8 @@ pub struct Runtime {
     pub gamma_supported: bool,
     pub gamma_applied: bool,
     pub scheduled: bool,
+    /// Coordinates the legacy gamma/overlay and the optional screen matrix.
+    pub screen_handoff: crate::screen_handoff::Handoff,
     /// Last Kelvin value actually pushed to the GPU (avoids flicker).
     pub last_gamma_kelvin: Option<u32>,
     /// Active colour-safe whitelist hit (process name / title keyword).
@@ -419,6 +436,7 @@ impl Runtime {
             gamma_supported: true,
             gamma_applied: false,
             scheduled: false,
+            screen_handoff: crate::screen_handoff::Handoff::default(),
             last_gamma_kelvin: None,
             whitelist_active: None,
             work_elapsed_seconds: 0,
@@ -471,6 +489,9 @@ impl Runtime {
                 gamma_supported: self.gamma_supported,
                 gamma_applied: self.gamma_applied && self.settings.eye.enabled && !paused_by_whitelist,
                 color_vision_status: crate::color_filter::status().as_str(),
+                screen_filter_status: self.screen_handoff.status(crate::color_filter::screen_status()).as_str(),
+                screen_filter_covers_overlay: self.screen_handoff.hides_overlay()
+                    || crate::color_filter::screen_covers_overlay(),
                 capture_excluded: crate::windows::capture_exclusion_active(),
                 effective_kelvin: crate::display::current_kelvin(),
                 target_kelvin: target,

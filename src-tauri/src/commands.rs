@@ -149,6 +149,9 @@ pub fn apply_profile(app: AppHandle, shared: State<'_, Shared>, profile: String)
 
 #[tauri::command(async)]
 pub fn retry_color_vision(app: AppHandle, shared: State<'_, Shared>) -> Snapshot {
+    // The screen retry is coordinated with gamma neutralization; a direct
+    // worker retry must not acquire an unowned screen matrix over warm gamma.
+    shared.lock().screen_handoff.retry();
     crate::color_filter::retry();
     engine::refresh(&app, shared.inner())
 }

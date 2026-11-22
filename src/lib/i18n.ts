@@ -22,6 +22,25 @@ export type Theme = "dark" | "light";
 
 /** Strings added in v2.1 that do not appear in the generated dictionary. */
 const EXTRA: Record<string, string> = {
+  // Optional system-wide replacement for the ordinary overlay.
+  "پوشش منوهای ویندوز (آزمایشی)": "Cover Windows menus (experimental)",
+  "برای پایداری بیشتر گرما و تیرگی روی استارت و ویجت؛ پیش‌فرض خاموش است.": "For steadier warmth and dimming over Start and the widget; off by default.",
+  "هنگام جابه‌جایی بین روش‌ها ممکن است تصویر موقتاً روشن شود.": "The display may briefly brighten when switching methods.",
+  "افکت تمام‌صفحه ویندوز": "Windows full-screen effect",
+  "گرما و تیرگی در افکت تمام‌صفحه درخواست شده‌اند؛ ظاهر تضمین نمی‌شود": "Warmth and dimming were requested in the full-screen effect; appearance is not guaranteed",
+  "این حالت از افکت تمام‌صفحه ویندوز استفاده می‌کند. ممکن است با Magnifier یا فیلتر رنگ ویندوز تداخل داشته باشد؛ نتیجه در HDR، بازی، صفحه امن و ضبط صفحه متفاوت است. پوشش همه سطوح تضمین نمی‌شود.": "This uses a Windows full-screen effect. It may conflict with Magnifier or Windows colour filters; HDR, games, the secure desktop and recordings may behave differently. Coverage of all surfaces is not guaranteed.",
+  "حالت تمام‌صفحه خاموش است؛ روش قبلی استفاده می‌شود.": "Full-screen mode is off; the previous overlay is used.",
+  "محافظ چشم خاموش است؛ این حالت نیز غیرفعال است.": "Eye care is off; this mode is inactive too.",
+  "رنگ‌ایمن فعال است؛ این حالت موقتاً متوقف شد.": "Color-Safe is active; this mode is temporarily paused.",
+  "ویندوز درخواست فیلتر تمام‌صفحه را پذیرفت؛ پوشش ظاهری تضمین نمی‌شود.": "Windows accepted the full-screen filter request; visible coverage is not guaranteed.",
+  "در انتظار پاسخ ویندوز؛ لطفاً کمی صبر کنید.": "Waiting for Windows; please wait a moment.",
+  "افکت یا ذره‌بین دیگری شناسایی شد؛ از لایه قبلی استفاده می‌شود. پس از رفع تداخل، دوباره تلاش کنید.": "Another effect or magnifier was detected; the previous overlay is used. Resolve the conflict and retry.",
+  "اعمال تمام‌صفحه یا انتقال امن Gamma ناموفق بود؛ از لایه قبلی استفاده می‌شود.": "The full-screen effect or safe Gamma handoff failed; the previous overlay is used.",
+  "تغییر افکت تأیید نشد؛ افکت قبلی ممکن است هنوز فعال باشد. برنامه دوباره تلاش می‌کند.": "The effect change could not be confirmed; the previous effect may still be active. The app will retry.",
+  "بازگرداندن فیلتر تمام‌صفحه تأیید نشد؛ برنامه را ببندید و تنظیمات رنگ ویندوز را بررسی کنید.": "The full-screen effect could not be confirmed restored; close the app and check Windows colour settings.",
+  "این محیط فیلتر تمام‌صفحه ندارد؛ از لایه قبلی استفاده می‌شود.": "This environment has no full-screen effect; the previous overlay is used.",
+  "اکنون کاهش روشنایی یا گرما لازم نیست.": "No software dimming or warmth is needed right now.",
+  "پنهان‌سازی پنجره شامل افکت تمام‌صفحه نیست؛ تصویر و ضبط را با ابزار خود بررسی کنید.": "Window capture exclusion does not apply to the full-screen effect; check screenshots and recordings with your own tools.",
   // Experimental, opt-in full-screen colour-vision assistance.
   "کمک به تشخیص رنگ": "Colour-vision assistance",
   "در برنامه‌های مشخص، گرما محو و کمک دید رنگی موقتاً متوقف می‌شود": "In listed apps, warmth fades and colour-vision assistance is temporarily paused",

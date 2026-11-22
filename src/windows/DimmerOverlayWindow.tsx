@@ -9,7 +9,9 @@ export default function DimmerOverlayWindow() {
   const eye = useAppStore((s) => s.snapshot.eye);
   const settings = useAppStore((s) => s.snapshot.settings);
 
-  const active = settings.eye.enabled && !eye.whitelisted;
+  // The fullscreen handoff hides this window before acquiring its combined
+  // dimming/warmth matrix. Rendering both at once would double the tint.
+  const active = settings.eye.enabled && !eye.whitelisted && !eye.screenFilterCoversOverlay;
   const dim = active ? ((100 - eye.effectiveBrightness) / 100) * 0.88 : 0;
 
   const fallbackWarm = active && !eye.gammaSupported;
