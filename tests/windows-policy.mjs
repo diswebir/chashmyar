@@ -93,6 +93,8 @@ ok(state.includes('cover_windows_menus: false') && state.includes('read_cover_wi
 ok(state.includes('color_vision_profile: "off".into()') && state.includes('color_vision_strength: 60'), 'saved-settings default is opt-in');
 ok(state.includes('crate::color_filter::status().as_str()'), 'native worker status enters the serialized snapshot');
 ok(persistence.includes('settings.eye.normalize_color_vision()') && commands.match(/normalize_color_vision\(\)/g)?.length >= 2, 'load, full update and patch normalize vision settings');
-ok(engine.includes('crate::color_filter::stop_and_restore()') && read('src-tauri/src/display.rs').includes('crate::color_filter::panic_stop()'), 'normal shutdown and panic request restoration');
+const panicHook = sliceBetween(gamma, 'pub fn install_panic_hook()', '/* -------------------------------------------------------------------------- */');
+ok(engine.includes('crate::color_filter::stop_and_restore()') && engine.includes('display::stop_and_restore_gamma()'), 'normal shutdown requests serial restoration');
+ok(panicHook.includes('try_log_panic') && !panicHook.includes('GAMMA_STOPPED.store') && !panicHook.includes('panic_stop()'), 'caught panics do not stop healthy filters; actual process death uses the watchdog');
 ok(colorVision.includes('same_matrix(&current, &last)') && colorVision.includes('same_matrix(&current, &IDENTITY)'), 'policy checks observed and last-owned matrices before writes');
 console.log(`PASS: ${checks} Windows source-policy assertions (not an interactive Windows test)`);

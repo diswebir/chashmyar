@@ -12,6 +12,15 @@ mod release_hash;
 #[path = "../../../src-tauri/src/state.rs"]
 mod state;
 #[cfg(test)]
+#[path = "../../../src-tauri/src/settings_recovery.rs"]
+mod settings_recovery;
+#[cfg(test)]
+#[path = "../../../src-tauri/src/foreground_match.rs"]
+mod foreground_match;
+#[cfg(test)]
+#[path = "../../../src-tauri/src/gamma_logic.rs"]
+mod gamma_logic;
+#[cfg(test)]
 #[path = "../../../src-tauri/src/color_vision.rs"]
 mod color_vision;
 #[cfg(test)]
@@ -33,6 +42,36 @@ mod screen_handoff;
 mod tests {
     use super::analytics_record::DailyRecord;
     use serde_json::json;
+
+    #[test]
+    fn foreground_policy_controls_the_actual_runtime_snapshot() {
+        use super::{foreground_match::Sample, state::Runtime};
+        let mut settings = super::state::Settings::default();
+        settings.eye.enabled = true;
+        settings.eye.schedule_enabled = false;
+        settings.eye.color_safe_enabled = true;
+        settings.eye.kelvin = 3200;
+        settings.eye.brightness = 80;
+        settings.eye.color_safe_whitelist = vec!["Figma.exe".into(), "DevTools".into()];
+        let mut rt = Runtime::new(settings);
+        let figma = Sample { sequence: 1, process: Some("figma.exe".into()), title: Some("Design".into()) };
+        rt.foreground_cache.observe(figma, true, &rt.settings.eye.color_safe_whitelist);
+        let snap = rt.snapshot();
+        assert!(snap.eye.whitelisted);
+        assert_eq!(snap.eye.whitelisted_app.as_deref(), Some("Figma.exe"));
+        assert_eq!((snap.eye.target_kelvin, snap.eye.effective_brightness), (6500, 100));
+
+        let missing = Sample { sequence: 2, process: None, title: None };
+        rt.foreground_cache.observe(missing, true, &rt.settings.eye.color_safe_whitelist);
+        rt.settings.eye.color_safe_whitelist.retain(|v| v != "DevTools");
+        rt.foreground_cache.recompute(true, &rt.settings.eye.color_safe_whitelist);
+        assert!(rt.snapshot().eye.whitelisted);
+        rt.settings.eye.color_safe_whitelist.clear();
+        rt.foreground_cache.recompute(true, &rt.settings.eye.color_safe_whitelist);
+        let snap = rt.snapshot();
+        assert!(!snap.eye.whitelisted);
+        assert_eq!((snap.eye.target_kelvin, snap.eye.effective_brightness), (3200, 80));
+    }
 
     #[test]
     fn fresh_install_enables_requested_defaults() {

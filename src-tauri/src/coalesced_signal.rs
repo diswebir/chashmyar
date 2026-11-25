@@ -24,6 +24,21 @@ impl CoalescedSignal {
         }
     }
 
+    /// Runs the unique consumer and retries a batch after a caught task panic,
+    /// even if the user makes no further edits. `on_panic` must not panic.
+    /// Intended for long-lived workers; this function never returns.
+    pub fn run_supervised(&self, delay: Duration, retry_delay: Duration,
+                          mut task: impl FnMut(), mut on_panic: impl FnMut()) -> ! {
+        loop {
+            self.wait_batch(delay);
+            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(&mut task)).is_err() {
+                on_panic();
+                thread::sleep(retry_delay);
+                self.mark();
+            }
+        }
+    }
+
     /// Called only by the unique consumer thread. Returns once per coalesced
     /// batch, after at most one delay from seeing the first outstanding change.
     pub fn wait_batch(&self, delay: Duration) {
@@ -65,6 +80,23 @@ mod tests {
         signal.mark();
         assert!(rx.recv_timeout(Duration::from_millis(500)).is_ok());
         worker.join().unwrap();
+    }
+
+    #[test]
+    fn a_panicking_save_is_retried_without_another_user_edit() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let signal = Arc::new(CoalescedSignal::new());
+        let copy = signal.clone();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let count = calls.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+        thread::spawn(move || copy.run_supervised(Duration::ZERO, Duration::from_millis(25), || {
+            if count.fetch_add(1, Ordering::SeqCst) == 0 { panic!("injected save panic"); }
+            let _ = done_tx.send(());
+        }, || {}));
+        signal.mark();
+        done_rx.recv_timeout(Duration::from_secs(2)).expect("the failed batch must be retried");
+        assert!(calls.load(Ordering::SeqCst) >= 2);
     }
 
     #[test]

@@ -8,8 +8,7 @@ mod gamma_logic;
 mod display;
 #[path = "../../../src-tauri/src/color_vision.rs"]
 mod color_vision;
-mod diag { pub fn log<T: AsRef<str>>(_message: T) {} }
-mod color_filter { pub fn panic_stop() {} }
+mod diag { pub fn log<T: AsRef<str>>(_message: T) {} pub fn try_log_panic<T: AsRef<str>>(_: T) {} }
 
 use std::sync::atomic::Ordering;
 use std::thread;

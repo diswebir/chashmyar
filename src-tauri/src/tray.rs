@@ -8,7 +8,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, Wry};
 
 use crate::engine::{self, Shared};
-use crate::{display, windows};
+use crate::windows;
 
 static EYE_ITEM: OnceLock<Mutex<Option<CheckMenuItem<Wry>>>> = OnceLock::new();
 static TIMER_ITEM: OnceLock<Mutex<Option<MenuItem<Wry>>>> = OnceLock::new();
@@ -85,10 +85,10 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
                         rt.settings.eye.enabled = !rt.settings.eye.enabled;
                         rt.settings.eye.enabled
                     };
-                    if !next { display::restore_gamma(); shared.lock().last_gamma_kelvin = None; }
                     crate::persistence::request_save(&worker_app, &shared);
-                    engine::refresh(&worker_app, &shared);
-                    sync_eye_check(&worker_app, next);
+                    let snapshot = if next { engine::refresh(&worker_app, &shared) }
+                        else { engine::refresh_neutral_if_off(&worker_app, &shared) };
+                    sync_eye_check(&worker_app, snapshot.settings.eye.enabled);
                 }
                 "timer-toggle" => {
                     let shared = engine::shared(&worker_app);

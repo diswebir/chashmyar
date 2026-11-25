@@ -182,15 +182,6 @@ pub fn stop_and_restore() -> bool {
     ctl.done && ctl.shutdown_ok
 }
 
-/// Panic hooks cannot wait or acquire a lock already held on the panic thread.
-/// If available, ask the worker to restore; process crashes remain best effort.
-pub fn panic_stop() {
-    if let Ok(mut ctl) = CONTROL.try_lock() {
-        ctl.stopped = true;
-        WAKE.notify_all();
-    }
-}
-
 // Native API is compiled in production Windows builds. Unit tests on every
 // host use the fake below; the standalone rustc harness has no Cargo externs.
 #[cfg(all(windows, not(test)))]

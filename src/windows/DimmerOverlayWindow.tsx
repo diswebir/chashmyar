@@ -12,6 +12,9 @@ export default function DimmerOverlayWindow() {
   // Hide this dimming layer before the opt-in fullscreen matrix is acquired.
   const active = settings.eye.enabled && !eye.whitelisted && !eye.screenFilterCoversOverlay;
   const dim = active ? ((100 - eye.effectiveBrightness) / 100) * 0.88 : 0;
+  // Keep the historical zero-as-default behavior and saved long durations in
+  // sync with the Gamma worker; they may be custom settings from older builds.
+  const transitionMs = settings.eye.transitionMs || 2000;
 
   return (
     <div className="pointer-events-none fixed inset-0 select-none" style={{ cursor: "none" }}>
@@ -20,7 +23,7 @@ export default function DimmerOverlayWindow() {
         data-testid="brightness-overlay-layer"
         style={{
           background: `rgba(0, 0, 0, ${dim})`,
-          transition: `background ${(settings.eye.transitionMs || 2000) / 1000}s linear`,
+          transition: `background ${transitionMs / 1000}s linear`,
         }}
       />
     </div>

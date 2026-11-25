@@ -11,6 +11,9 @@ use crate::{analytics, display, focus_guard, locker, windows};
 pub type Shared = Arc<Mutex<Runtime>>;
 
 pub const SNAPSHOT_EVENT: &str = "app://snapshot";
+static FILTER_TRACE: Mutex<crate::filter_diagnostics::TraceTracker> =
+    Mutex::new(crate::filter_diagnostics::TraceTracker::new());
+static SHUTDOWN_ONCE: crate::shutdown_once::ShutdownOnce = crate::shutdown_once::ShutdownOnce::new();
 // Serialize changes which open/close the lock, hook and focus guard together.
 pub(crate) static BREAK_TRANSITION: Mutex<()> = Mutex::new(());
 
@@ -31,13 +34,23 @@ pub fn shared(app: &AppHandle) -> Shared {
 
 /// Recomputes everything derived from settings, then pushes the snapshot.
 pub fn refresh(app: &AppHandle, shared: &Shared) -> Snapshot {
+    refresh_inner(app, shared, false)
+}
+
+/// User-requested Gamma reset/tray off: publish a fast neutral target only if
+/// the current locked state is still off. A newer enable wins over a stale reset.
+pub fn refresh_neutral_if_off(app: &AppHandle, shared: &Shared) -> Snapshot {
+    refresh_inner(app, shared, true)
+}
+
+fn refresh_inner(app: &AppHandle, shared: &Shared, request_fast_off: bool) -> Snapshot {
     let snapshot = {
         let mut rt = shared.lock();
         let (kelvin, brightness, scheduled) = state::effective_eye(&rt.settings);
         rt.scheduled = scheduled;
 
         let paused_by_whitelist =
-            rt.whitelist_active.is_some() && rt.settings.eye.color_safe_enabled;
+            rt.foreground_cache.active().is_some() && rt.settings.eye.color_safe_enabled;
         let target = if !rt.settings.eye.enabled || paused_by_whitelist {
             display::NEUTRAL_KELVIN
         } else {
@@ -66,8 +79,10 @@ pub fn refresh(app: &AppHandle, shared: &Shared) -> Snapshot {
         if handoff.hold_gamma_neutral {
             display::hold_neutral_for_fullscreen(rt.settings.eye.transition_ms);
         } else {
-            // The existing legacy transition duration remains unchanged.
-            display::set_target(target, rt.settings.eye.transition_ms);
+            let duration = crate::gamma_logic::transition_for_explicit_off(
+                rt.settings.eye.transition_ms, request_fast_off, rt.settings.eye.enabled,
+            );
+            display::set_target(target, duration);
         }
         // Colour vision stays independent of the eye switch, but both screen
         // warmth and dimming share its single Magnification worker/matrix.
@@ -78,9 +93,10 @@ pub fn refresh(app: &AppHandle, shared: &Shared) -> Snapshot {
             paused_by_whitelist,
             screen,
         );
-        rt.last_gamma_kelvin = Some(if handoff.hold_gamma_neutral { display::NEUTRAL_KELVIN } else { target });
-        rt.gamma_applied = !handoff.hold_gamma_neutral && rt.gamma_supported && rt.settings.eye.enabled
-            && !paused_by_whitelist && target < display::NEUTRAL_KELVIN;
+        rt.gamma_applied = crate::gamma_logic::reported_warmth(
+            rt.gamma_supported, rt.settings.eye.enabled, paused_by_whitelist,
+            handoff.hold_gamma_neutral, target, display::current_kelvin(), display::NEUTRAL_KELVIN,
+        );
 
         let overlay_visible = crate::overlay_policy::needs_overlay(
             rt.settings.eye.enabled, paused_by_whitelist, brightness,
@@ -92,6 +108,26 @@ pub fn refresh(app: &AppHandle, shared: &Shared) -> Snapshot {
         rt.snapshot()
     };
 
+    // I/O is outside the runtime lock. Do not record foreground identities.
+    // Serializing this small trace also preserves revision order across callers.
+    {
+        use crate::filter_diagnostics::FilterTrace;
+        let trace = FilterTrace {
+            enabled: snapshot.settings.eye.enabled,
+            color_safe_paused: snapshot.eye.whitelisted,
+            scheduled: snapshot.eye.scheduled,
+            requested_kelvin: snapshot.eye.target_kelvin,
+            last_api_kelvin: snapshot.eye.effective_kelvin,
+            brightness: snapshot.eye.effective_brightness,
+            gamma_any: snapshot.eye.gamma_supported,
+            gamma_all: snapshot.eye.gamma_all_accepted,
+            screen_status: snapshot.eye.screen_filter_status,
+            screen_covered: snapshot.eye.screen_filter_covers_overlay,
+        };
+        if let Some(changed) = FILTER_TRACE.lock().observe(snapshot.revision, trace) {
+            crate::diag::log(changed.message());
+        }
+    }
     windows::ensure_overlay_worker(app);
     let _ = app.emit(SNAPSHOT_EVENT, snapshot.clone());
     snapshot
@@ -238,25 +274,27 @@ pub fn emergency_unlock(app: &AppHandle, shared: &Shared) {
     refresh(app, shared);
 }
 
-/// Panic/exit path: never leave a tinted screen, a swallowed keyboard or an
-/// orphaned watchdog behind.
+/// Normal exit path. Repeated Quit/ExitRequested/Exit events share one
+/// cleanup; a process death remains guarded by the detached watchdog.
 pub fn safe_shutdown(app: &AppHandle) {
-    windows::stop_overlay_event_hook();
-    locker::release();
-    focus_guard::stop();
-    if !crate::color_filter::stop_and_restore() {
-        crate::diag::log("color vision restore could not be confirmed during shutdown");
-    }
-    if display::stop_and_restore_gamma() {
-        display::stop_watchdog();
-    } // Otherwise keep the watchdog alive to attempt a reset after process exit.
-    if let Some(shared) = app.try_state::<Shared>() {
-        let pending = {
-            let mut rt = shared.lock();
-            rt.last_gamma_kelvin = None;
-            rt.take_focus()
-        };
-        if let Some((date, seconds, epoch)) = pending { analytics::add_focus_seconds(app, &date, seconds, epoch); }
-        crate::persistence::save_current(app, shared.inner());
-    }
+    SHUTDOWN_ONCE.run(|| {
+        windows::stop_overlay_event_hook();
+        locker::release();
+        focus_guard::stop();
+        let color_ok = crate::color_filter::stop_and_restore();
+        if !color_ok { crate::diag::log("color vision restore could not be confirmed during shutdown"); }
+        let gamma_ok = display::stop_and_restore_gamma();
+        if gamma_ok { display::stop_watchdog(); }
+        // Otherwise keep the watchdog alive to attempt a reset after exit.
+        let mut save_ok = true;
+        if let Some(shared) = app.try_state::<Shared>() {
+            let pending = { shared.lock().take_focus() };
+            if let Some((date, seconds, epoch)) = pending { analytics::add_focus_seconds(app, &date, seconds, epoch); }
+            if let Err(err) = crate::persistence::save_current_checked(app, shared.inner()) {
+                crate::diag::log(format!("settings save failed during shutdown: {err}"));
+                save_ok = false;
+            }
+        }
+        color_ok && gamma_ok && save_ok
+    });
 }

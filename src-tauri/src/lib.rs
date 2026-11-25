@@ -22,6 +22,7 @@ pub mod color_vision;
 pub mod diag;
 pub mod display;
 pub mod engine;
+pub mod filter_diagnostics;
 pub mod gamma_logic;
 pub mod focus_guard;
 pub mod foreground;
@@ -32,10 +33,12 @@ pub mod overlay_policy;
 pub mod popup_layer;
 pub mod persistence;
 pub mod screen_handoff;
+pub mod shutdown_once;
 mod release_hash;
 pub mod release_payload;
 pub mod self_test;
 pub mod score;
+pub mod settings_recovery;
 pub mod state;
 pub mod timer;
 pub mod timer_rules;
@@ -89,14 +92,20 @@ pub fn run() {
         ))
         .setup(|app| {
             let handle = app.handle().clone();
-            let settings = persistence::load(&handle);
+            let loaded = persistence::load(&handle);
+            let may_update_autostart = loaded.may_update_autostart;
+            let settings = loaded.settings;
             let autostart_wanted = settings.system.autostart;
             let auto_start_timer = settings.system.auto_start_timer_on_launch;
             let eye_on_launch = settings.system.eye_care_on_launch;
             let launched_from_autostart = std::env::args().any(|a| a == "--autostart");
 
-            // Probe before starting the lerp worker: probing after refresh used
-            // to reset the LUT to neutral during the startup transition.
+            // The crash helper must be armed before the first LUT write, not
+            // after the initial warm request has already begun. Its ability to
+            // open the parent and restore the GPU is still best effort.
+            display::spawn_watchdog();
+            // Probe before starting interpolation so it cannot reset a warm
+            // startup transition that is already in progress.
             let gamma_supported = display::gamma_supported_probe();
             let mut runtime = Runtime::new(settings);
             runtime.gamma_supported = gamma_supported;
@@ -135,9 +144,13 @@ pub fn run() {
             {
                 use tauri_plugin_autostart::ManagerExt;
                 let manager = handle.autolaunch();
-                let result = if autostart_wanted { manager.enable() } else { manager.disable() };
-                if let Err(err) = result {
-                    diag::log(format!("autostart registration failed: {err}"));
+                if may_update_autostart {
+                    let result = if autostart_wanted { manager.enable() } else { manager.disable() };
+                    if let Err(err) = result {
+                        diag::log(format!("autostart registration failed: {err}"));
+                    }
+                } else {
+                    diag::log("autostart preference unavailable; preserving existing OS registration");
                 }
                 match manager.is_enabled() {
                     Ok(actual) => shared.lock().settings.system.autostart = actual,
@@ -169,8 +182,6 @@ pub fn run() {
             /* -------------------------- background loops ----------------------- */
             timer::spawn_ticker(handle.clone(), shared.clone()); // 1 s state machine
             foreground::spawn_watcher(handle.clone(), shared.clone()); // 1.5 s whitelist poll
-            display::spawn_reassert_loop(); // 10 s gamma re-assertion
-            display::spawn_watchdog(); // detached crash-safe helper
             updater::start_periodic_checks(handle.clone());
             #[cfg(all(windows, feature = "portable"))]
             portable_replace::cleanup_after_successful_start();

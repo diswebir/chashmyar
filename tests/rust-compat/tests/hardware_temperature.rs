@@ -5,8 +5,7 @@
 #[path = "../../../src-tauri/src/gamma_logic.rs"] mod gamma_logic;
 #[path = "../../../src-tauri/src/overlay_policy.rs"] mod overlay_policy;
 #[path = "../../../src-tauri/src/display.rs"] mod display;
-mod diag { pub fn log<T: AsRef<str>>(_: T) {} }
-mod color_filter { pub fn panic_stop() {} }
+mod diag { pub fn log<T: AsRef<str>>(_: T) {} pub fn try_log_panic<T: AsRef<str>>(_: T) {} }
 
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};

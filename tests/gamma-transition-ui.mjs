@@ -154,6 +154,17 @@ try {
   await waitSource(main, 'محافظ خاموش');
   await checkBlackLayer(dimmer, false, 'disabled after a reported neutral ramp');
 
+  // Old installations may carry a long custom transition; do not silently
+  // shorten the CSS while the native Gamma policy honors the saved value.
+  snap.revision++; snap.settings.eye.transitionMs = 120_000;
+  await emit(dimmer, snap);
+  await dimmer.waitForFunction(() => document.querySelector('[data-testid="brightness-overlay-layer"]')?.style.transitionDuration === '120s');
+  eq(await dimmer.getByTestId('brightness-overlay-layer').evaluate(el => el.style.transitionDuration), '120s', 'saved two-minute transition remains intact');
+  snap.revision++; snap.settings.eye.transitionMs = 0;
+  await emit(dimmer, snap);
+  await dimmer.waitForFunction(() => document.querySelector('[data-testid="brightness-overlay-layer"]')?.style.transitionDuration === '2s');
+  eq(await dimmer.getByTestId('brightness-overlay-layer').evaluate(el => el.style.transitionDuration), '2s', 'zero keeps the historical two-second default');
+
   eq(errors.length, 0, `no uncaught browser errors: ${errors.join('; ')}`);
   console.log(`PASS: ${checks} simulated native snapshot transition checks (not a Windows or GPU test)`);
 } finally {

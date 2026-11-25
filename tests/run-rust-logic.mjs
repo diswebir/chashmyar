@@ -11,6 +11,8 @@ try {
     ['overlay_policy', 'src-tauri/src/overlay_policy.rs'],
     ['popup_layer', 'src-tauri/src/popup_layer.rs'],
     ['gamma_logic', 'src-tauri/src/gamma_logic.rs'],
+    ['filter_diagnostics', 'src-tauri/src/filter_diagnostics.rs'],
+    ['shutdown_once', 'src-tauri/src/shutdown_once.rs'],
     ['color_vision', 'src-tauri/src/color_vision.rs'],
     ['color_filter_worker', 'tests/color-filter-worker.rs'],
     ['screen_handoff', 'tests/screen-handoff.rs'],

@@ -2,6 +2,17 @@
 
 Changes to the application are recorded here. Version headers describe source baselines; automatic release tags may differ when newer tags already exist.
 
+## 2.4.12 — stability source candidate (not a published release)
+
+### Filter lifecycle, diagnostics and saved data
+- Keep the normal 2.4.11 Gamma-only warmth path and black dimming, without an automatic software-warmth fallback. Preserve the separately opted-in system-menu matrix and the saved user choice. A single supervised Gamma worker interpolates and reasserts a settled warm target every ten seconds; a caught worker unwind retries with bounded backoff. A caught unrelated panic no longer stops a healthy filter.
+- Arm the crash watchdog before the first Gamma probe. A failed/unexpected wait is not treated as parent death and cannot trigger a neutral write; normal cleanup is serialized and retries unconfirmed restoration. Watchdog startup, process-handle access, Gamma reset, custom calibration, HDR and physical output remain best effort.
+- Trace filter decisions and Gamma API results without intentionally logging foreground identities. A periodic primary-DC LUT readback reports a driver-dependent hint only. Logs append sessions and rotate on a best-effort basis; cross-process rotation is not locked, and paths/panic messages may contain personal information.
+- Process ordered foreground samples against the latest whitelist; older lookup results cannot overwrite newer ones. Missing or partially unavailable native data retains an existing allowed match until a complete nonmatch, explicit disable, or removal. This can prolong a pause when the data remain unavailable; native focus races and poll delay remain.
+- Read the existing store-compatible settings file with per-field recovery, preserve valid known/unknown fields, back up damaged originals before replacement, and serialize saves from the latest state. A backup/read failure prevents automatic overwrite; damaged launch/strict-lock switches fail conservatively. Same-directory replacement and recovery still require real Windows/filesystem testing.
+- Preserve historically accepted transition durations including long values; use overflow-safe interpolation instead of rewriting them. Clamp out-of-range temperature/brightness values to their UI ranges. A neutral startup probe alone is not reported as applied warmth. Saturate the idle threshold and prevent a stale explicit-off request from overriding a newer enable.
+- See the [Persian stability and Windows test guide](UPDATE_2.4.12_FA.md). Host/fake-driver and browser/mock tests and Windows GNU cross-checks cannot establish the cause on a user's machine or prove interactive Windows, GPU, HDR, WebView2, installer or physical-display behavior.
+
 ## 2.4.11 — source candidate (not a published release)
 
 ### Temperature source and reporting

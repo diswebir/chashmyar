@@ -91,6 +91,15 @@ impl EyeSettings {
         }
         self.color_vision_strength = self.color_vision_strength.min(100);
     }
+
+    /// Keep Gamma, the screen matrix and the black dimmer in the same valid
+    /// temperature/brightness range. Do not rewrite the saved transition.
+    pub fn normalize_display(&mut self) {
+        self.kelvin = self.kelvin.clamp(2700, 6500);
+        self.schedule_kelvin = self.schedule_kelvin.clamp(2700, 6500);
+        self.brightness = self.brightness.clamp(10, 100);
+        self.schedule_brightness = self.schedule_brightness.clamp(10, 100);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -400,10 +409,8 @@ pub struct Runtime {
     pub scheduled: bool,
     /// Coordinates the legacy gamma/overlay and the optional screen matrix.
     pub screen_handoff: crate::screen_handoff::Handoff,
-    /// Last Kelvin value actually pushed to the GPU (avoids flicker).
-    pub last_gamma_kelvin: Option<u32>,
-    /// Active colour-safe whitelist hit (process name / title keyword).
-    pub whitelist_active: Option<String>,
+    /// Latest ordered foreground observation and colour-safe decision.
+    pub foreground_cache: crate::foreground_match::ForegroundCache,
     /// Continuous work seconds since the last 20-20-20 micro break.
     pub work_elapsed_seconds: i64,
     /// Unflushed focused seconds and their local calendar day (analytics).
@@ -415,9 +422,6 @@ pub struct Runtime {
     pub micro_break_is_preview: bool,
     /// Monotonic order for snapshots emitted from different threads.
     pub revision: u64,
-    /// Foreground process/title cache, used by the whitelist watcher.
-    pub foreground_process: String,
-    pub foreground_title: String,
     /// Milliseconds Ctrl + Shift have been held down during a break.
     pub emergency_hold_ms: u32,
     /// Once per uninterrupted absence, not once per second.
@@ -442,16 +446,13 @@ impl Runtime {
             gamma_applied: false,
             scheduled: false,
             screen_handoff: crate::screen_handoff::Handoff::default(),
-            last_gamma_kelvin: None,
-            whitelist_active: None,
+            foreground_cache: crate::foreground_match::ForegroundCache::default(),
             work_elapsed_seconds: 0,
             focus_seconds: 0,
             focus_date: chrono::Local::now().format("%Y-%m-%d").to_string(),
             work_session_elapsed_seconds: 0,
             micro_break_is_preview: false,
             revision: 0,
-            foreground_process: String::new(),
-            foreground_title: String::new(),
             emergency_hold_ms: 0,
             idle_natural_break_recorded: false,
             break_counts_cycle: false,
@@ -466,7 +467,7 @@ impl Runtime {
 
     pub fn snapshot(&self) -> Snapshot {
         let (kelvin, brightness, scheduled) = effective_eye(&self.settings);
-        let paused_by_whitelist = self.whitelist_active.is_some() && self.settings.eye.color_safe_enabled;
+        let paused_by_whitelist = self.foreground_cache.active().is_some() && self.settings.eye.color_safe_enabled;
         let target = if !self.settings.eye.enabled || paused_by_whitelist {
             crate::display::NEUTRAL_KELVIN
         } else {
@@ -505,7 +506,7 @@ impl Runtime {
                 scheduled,
                 whitelisted: paused_by_whitelist,
                 whitelisted_app: if paused_by_whitelist {
-                    self.whitelist_active.clone()
+                    self.foreground_cache.active().map(str::to_owned)
                 } else {
                     None
                 },

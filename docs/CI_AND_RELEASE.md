@@ -2,7 +2,7 @@
 
 [README](../README.en.md) · [Development and testing](DEVELOPMENT.md) · [Persian quickstart](GITHUB_QUICKSTART_FA.md) · [Full Persian release guide](RELEASE_GUIDE_FA.md)
 
-This repository is configured to build and publish Windows x64 releases from `main`. The repository has published v2.4.9; this new 2.4.10 source has not been pushed or published from this workspace. A successful automated run is not evidence that installer behavior, WebView2 interaction, audio, keyboard hooks, gamma, capture or the tray were manually validated on Windows. The [Persian fix guide](../FIX_2.4.8_FA.md) explains the 2.4.7 portable defect and replacement.
+This repository is configured to build and publish Windows x64 releases from `main`. This 2.4.12 stability source candidate has not been pushed or published from this workspace; inspect the live repository for its current tags. A successful automated run is not evidence that installer behavior, WebView2 interaction, audio, keyboard hooks, gamma, capture or the tray were manually validated on Windows. The [Persian fix guide](../FIX_2.4.8_FA.md) explains the 2.4.7 portable defect and replacement.
 
 > **Publication is automatic.** A successful push or merge to `main` can create a public Release without a human approval gate. Review changes and perform appropriate native Windows tests before merging when practical; otherwise change the workflow's policy before pushing.
 
@@ -35,7 +35,7 @@ The release planner checks the exact source commit and existing stable tags. The
 
 ## Versions and assets
 
-The source baseline is `2.4.10`. If the greatest stable tag is `v2.4.9`, the next successful push publishes `v2.4.10`; a subsequent successful source commit normally produces `v2.4.11`. If a stable tag equals or exceeds the baseline, the planner allocates the next patch after the greatest stable tag and never overwrites it. Stable numeric versions are supported, with each Windows version component at most `65535`; after an occupied maximum patch, advance the major/minor baseline.
+The source baseline is `2.4.12`. If the greatest stable tag is `v2.4.11`, the next successful push publishes `v2.4.12`; a subsequent successful source commit normally produces `v2.4.13`. If a stable tag equals or exceeds the baseline, the planner allocates the next patch after the greatest stable tag and never overwrites it. Stable numeric versions are supported, with each Windows version component at most `65535`; after an occupied maximum patch, advance the major/minor baseline.
 
 `main` is not version-bumped by the workflow. The release tag points to a version-only child of the triggering source commit; its npm and Rust manifests/lockfiles and Tauri config match the released binaries. Thus `package.json` on `main` is not a reliable way to identify the latest Release. A normal push needs no manually created tag or Publish click. `CHANGELOG.md` is maintained by humans.
 

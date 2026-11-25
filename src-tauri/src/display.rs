@@ -5,9 +5,9 @@
 //! * Changes are interpolated linearly over the saved transition duration
 //!   (2 s by default), so the color-safe hand-off is gradual.
 //! * A 10 s re-assertion loop maintains a requested non-neutral gamma ramp.
-//! * A detached `--gamma-watchdog <pid>` child restores 6500K the instant the
-//!   main process is killed or crashes.
-//! * The ramp is also restored on exit and from a panic hook.
+//! * A detached `--gamma-watchdog <pid>` child restores 6500K after the
+//!   main process is killed or crashes. Normal exit performs a serial reset.
+//! * A caught panic is not process exit and must not stop healthy workers.
 
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
@@ -22,7 +22,6 @@ pub const MIN_KELVIN: u32 = 2700;
 static TOUCHED: AtomicBool = AtomicBool::new(false);
 static WORKER_STARTED: AtomicBool = AtomicBool::new(false);
 static WATCHDOG_STARTED: AtomicBool = AtomicBool::new(false);
-static REASSERT_STARTED: AtomicBool = AtomicBool::new(false);
 static GAMMA_STOPPED: AtomicBool = AtomicBool::new(false);
 // Serialize every main-process driver write. After stop-and-restore returns,
 // no queued interpolation/reassertion may overwrite the neutral ramp.
@@ -199,6 +198,10 @@ fn push_ramp(_ramp: &[u16]) -> RampResult { RampResult { any: true, all: true } 
 pub(crate) mod test_driver {
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize};
     pub static FAIL: AtomicBool = AtomicBool::new(false);
+    // Inject a Rust panic before touching the fake driver. Test builds only.
+    pub static PANIC_NEXT: AtomicBool = AtomicBool::new(false);
+    // Production is fixed at 10 s. Host fake-driver tests can shorten it.
+    pub static REASSERT_INTERVAL_MS: AtomicU32 = AtomicU32::new(10_000);
     // At least one display reports success, but at least one reports failure.
     pub static PARTIAL: AtomicBool = AtomicBool::new(false);
     pub static CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -210,6 +213,9 @@ pub(crate) mod test_driver {
 fn push_ramp(ramp: &[u16]) -> RampResult {
     use test_driver::*;
     CALLS.fetch_add(1, Ordering::SeqCst);
+    if PANIC_NEXT.swap(false, Ordering::SeqCst) {
+        panic!("injected fake gamma driver panic");
+    }
     IN_FLIGHT.store(true, Ordering::SeqCst);
     let delay = DELAY_MS.load(Ordering::SeqCst);
     if delay != 0 { std::thread::sleep(Duration::from_millis(u64::from(delay))); }
@@ -219,6 +225,25 @@ fn push_ramp(ramp: &[u16]) -> RampResult {
     IN_FLIGHT.store(false, Ordering::SeqCst);
     RampResult { any: ok, all }
 }
+
+/// Sample only the primary DC just before a periodic reassertion. This cannot
+/// identify the writer, cover all monitors, or establish the physical result.
+#[cfg(windows)]
+fn primary_readback(expected: &[u16]) -> gamma_logic::Readback {
+    use std::ffi::c_void;
+    use windows::Win32::Graphics::Gdi::{GetDC, ReleaseDC};
+    use windows::Win32::UI::ColorSystem::GetDeviceGammaRamp;
+    unsafe {
+        let hdc = GetDC(None);
+        if hdc.is_invalid() { return gamma_logic::Readback::Unavailable; }
+        let mut observed = [0u16; 768];
+        let ok = GetDeviceGammaRamp(hdc, observed.as_mut_ptr() as *mut c_void).as_bool();
+        ReleaseDC(None, hdc);
+        gamma_logic::classify_readback(expected, if ok { Some(&observed) } else { None })
+    }
+}
+#[cfg(not(windows))]
+fn primary_readback(_expected: &[u16]) -> gamma_logic::Readback { gamma_logic::Readback::Unavailable }
 
 // Caller holds GAMMA_IO. Preserve CURRENT on complete failure. Even a failed
 // warm call is considered dirty because a subset of displays might have changed.
@@ -316,120 +341,135 @@ pub fn fullscreen_neutral_failed() -> bool {
 /*                         Event-driven, timed gamma lerp                      */
 /* -------------------------------------------------------------------------- */
 
+/// One supervised thread owns both interpolation and the periodic reassertion.
+/// A transient Rust unwind restarts its loop with the latest target; an actual
+/// process crash remains the separate watchdog's responsibility.
 fn spawn_lerp_worker() {
     if WORKER_STARTED.swap(true, Ordering::SeqCst) { return; }
-    std::thread::spawn(|| {
+    let started = std::thread::Builder::new().name("chashmyar-gamma".into()).spawn(|| {
         let _ = GAMMA_WORKER_THREAD.set(std::thread::current());
-        let epoch = Instant::now();
-        let now_ms = || epoch.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-        let mut active_config = None;
-        let mut transition = GammaTransition::new(NEUTRAL_KELVIN, NEUTRAL_KELVIN, 0, 2000);
+        let mut failures: u32 = 0;
         loop {
-            if GAMMA_STOPPED.load(Ordering::SeqCst) { break; }
-            let config = GAMMA_CONFIG.load(Ordering::SeqCst);
-            let target = config_kelvin(config);
-            let duration = config as u32;
-            if config & FULLSCREEN_HOLD != 0 {
-                active_config = None;
-                if fullscreen_neutral_ready() || fullscreen_neutral_failed() {
-                    std::thread::park();
-                    continue;
-                }
-                {
-                    let _io = GAMMA_IO.lock();
-                    // A pending older warm write has now finished. Re-check the
-                    // hold under the same I/O lock before resetting/acking.
-                    if GAMMA_STOPPED.load(Ordering::SeqCst)
-                        || GAMMA_CONFIG.load(Ordering::SeqCst) != config { continue; }
-                    let _ = apply_gamma_locked(NEUTRAL_KELVIN);
-                }
-                // Wake on changed config. The next loop parks once the result is
-                // published; no polling or surprise warm write while held.
-                continue;
-            }
-            let current = CURRENT.load(Ordering::SeqCst);
-            if active_config != Some(config) {
-                transition = GammaTransition::new(current, target, now_ms(), duration);
-                active_config = Some(config);
-            }
-            let partial_neutral = target == NEUTRAL_KELVIN && MAY_HAVE_OWN_WARMTH.load(Ordering::SeqCst);
-            if !gamma_logic::needs_attempt(current, target, gamma_available(), NEUTRAL_KELVIN)
-                && !partial_neutral {
-                // No periodic 100 ms wakeups while settled. Unpark is durable,
-                // including when a new target arrives just before this call.
+            let began = Instant::now();
+            let result = std::panic::catch_unwind(gamma_worker_loop);
+            if result.is_ok() || GAMMA_STOPPED.load(Ordering::SeqCst) { break; }
+            // A long healthy run ends an old failure streak. Bound retry pressure
+            // if the fault persists, but let an updated target wake the delay.
+            if began.elapsed() >= Duration::from_secs(30) { failures = 0; }
+            failures = failures.saturating_add(1);
+            let delay_ms = (1_000u64 << failures.saturating_sub(1).min(5)).min(30_000);
+            crate::diag::log(format!("gamma worker panicked; retrying in at most {delay_ms}ms (attempt {failures})"));
+            std::thread::park_timeout(Duration::from_millis(delay_ms));
+        }
+    });
+    if let Err(err) = started {
+        // A later refresh may retry thread creation; never leave a permanently
+        // true 'started' bit after spawn fails.
+        WORKER_STARTED.store(false, Ordering::SeqCst);
+        crate::diag::log(format!("gamma worker could not start: {err}"));
+    }
+}
+
+fn gamma_worker_loop() {
+    let epoch = Instant::now();
+    let now_ms = || epoch.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+    let mut active_config = None;
+    let mut transition = GammaTransition::new(NEUTRAL_KELVIN, NEUTRAL_KELVIN, 0, 2000);
+    #[cfg(all(not(windows), test))]
+    let reassert_interval = Duration::from_millis(u64::from(test_driver::REASSERT_INTERVAL_MS.load(Ordering::SeqCst).max(10)));
+    #[cfg(any(windows, not(test)))]
+    let reassert_interval = Duration::from_secs(10);
+    let mut reassert_at = Instant::now() + reassert_interval;
+    let mut last_readback = None;
+    loop {
+        if GAMMA_STOPPED.load(Ordering::SeqCst) { break; }
+        let config = GAMMA_CONFIG.load(Ordering::SeqCst);
+        let target = config_kelvin(config);
+        let duration = config as u32;
+        if config & FULLSCREEN_HOLD != 0 {
+            active_config = None;
+            if fullscreen_neutral_ready() || fullscreen_neutral_failed() {
                 std::thread::park();
                 continue;
             }
-            let next = transition.sample(now_ms());
-            if next == current && current != target {
-                std::thread::park_timeout(Duration::from_millis(LERP_STEP_MS));
-                continue;
-            }
-            let ok = {
+            {
                 let _io = GAMMA_IO.lock();
-                // Discard stale work, including anything queued before shutdown.
+                // Drain prior warm writes and re-check the hold under I/O lock.
                 if GAMMA_STOPPED.load(Ordering::SeqCst)
                     || GAMMA_CONFIG.load(Ordering::SeqCst) != config { continue; }
-                apply_gamma_locked(next)
+                let _ = apply_gamma_locked(NEUTRAL_KELVIN);
+            }
+            continue;
+        }
+        let current = CURRENT.load(Ordering::SeqCst);
+        if active_config != Some(config) {
+            transition = GammaTransition::new(current, target, now_ms(), duration);
+            active_config = Some(config);
+            reassert_at = Instant::now() + reassert_interval;
+        }
+        let partial_neutral = target == NEUTRAL_KELVIN && MAY_HAVE_OWN_WARMTH.load(Ordering::SeqCst);
+        if !gamma_logic::needs_attempt(current, target, gamma_available(), NEUTRAL_KELVIN)
+            && !partial_neutral {
+            // Idle and fullscreen holds do not wake periodically. A settled
+            // warm request uses this *same* thread for the old 10 s reassertion.
+            if target >= NEUTRAL_KELVIN || current >= NEUTRAL_KELVIN
+                || !TOUCHED.load(Ordering::SeqCst) {
+                std::thread::park();
+                continue;
+            }
+            let remaining = reassert_at.saturating_duration_since(Instant::now());
+            if !remaining.is_zero() {
+                std::thread::park_timeout(remaining);
+                continue;
+            }
+            let (ok, readback) = {
+                let _io = GAMMA_IO.lock();
+                if GAMMA_STOPPED.load(Ordering::SeqCst)
+                    || GAMMA_CONFIG.load(Ordering::SeqCst) != config { continue; }
+                let readback = primary_readback(&build_ramp(current));
+                // A read can take time; do not let it reapply a stale target.
+                if GAMMA_STOPPED.load(Ordering::SeqCst)
+                    || GAMMA_CONFIG.load(Ordering::SeqCst) != config { continue; }
+                (apply_gamma_locked(current), readback)
             };
-            let incomplete_reset = next == NEUTRAL_KELVIN && MAY_HAVE_OWN_WARMTH.load(Ordering::SeqCst);
-            if ok && !incomplete_reset {
-                std::thread::park_timeout(Duration::from_millis(LERP_STEP_MS));
-            } else {
-                // A rejecting or partially restored driver must not be hammered
-                // ten times per second. A changed target wakes this backoff.
+            if last_readback != Some(readback) {
+                crate::diag::log(format!("gamma primary readback before reassert: {} (hint only, {}K)", readback.as_str(), current));
+                last_readback = Some(readback);
+            }
+            reassert_at = Instant::now() + reassert_interval;
+            if !ok {
                 active_config = None;
                 std::thread::park_timeout(Duration::from_millis(gamma_logic::RETRY_DELAY_MS));
             }
+            continue;
         }
-    });
-}
-
-/* -------------------------------------------------------------------------- */
-/*                        10-second re-assertion loop                         */
-/* -------------------------------------------------------------------------- */
-
-/// Reapply only while ChashmYar actually requests a non-neutral ramp. When
-/// disabled or color-safe, repeatedly overwriting other color software with an
-/// identity ramp is both unnecessary and surprising.
-pub fn spawn_reassert_loop() {
-    if REASSERT_STARTED.swap(true, Ordering::SeqCst) { return; }
-    std::thread::spawn(|| loop {
-        std::thread::sleep(Duration::from_secs(10));
-        if GAMMA_STOPPED.load(Ordering::SeqCst) { break; }
-        let failed = {
+        let next = transition.sample(now_ms());
+        if next == current && current != target {
+            std::thread::park_timeout(Duration::from_millis(LERP_STEP_MS));
+            continue;
+        }
+        let ok = {
             let _io = GAMMA_IO.lock();
-            if GAMMA_STOPPED.load(Ordering::SeqCst) { break; }
-            let current = CURRENT.load(Ordering::SeqCst);
-            if target_kelvin() >= NEUTRAL_KELVIN || current >= NEUTRAL_KELVIN
-                || !TOUCHED.load(Ordering::SeqCst) { false }
-            else {
-                let result = push_ramp(&build_ramp(current));
-                LAST_ALL_OK.store(result.all, Ordering::SeqCst);
-                report_gamma_result(result);
-                if !result.any { GAMMA_AVAILABLE.store(false, Ordering::SeqCst); }
-                !result.any
-            }
+            // Discard stale work, including anything queued before shutdown.
+            if GAMMA_STOPPED.load(Ordering::SeqCst)
+                || GAMMA_CONFIG.load(Ordering::SeqCst) != config { continue; }
+            apply_gamma_locked(next)
         };
-        if failed { wake_lerp_worker(); }
-    });
+        let incomplete_reset = next == NEUTRAL_KELVIN && MAY_HAVE_OWN_WARMTH.load(Ordering::SeqCst);
+        if ok && !incomplete_reset {
+            reassert_at = Instant::now() + reassert_interval;
+            std::thread::park_timeout(Duration::from_millis(LERP_STEP_MS));
+        } else {
+            // A rejecting or partially restored driver must not be hammered.
+            active_config = None;
+            std::thread::park_timeout(Duration::from_millis(gamma_logic::RETRY_DELAY_MS));
+        }
+    }
 }
 
 /* -------------------------------------------------------------------------- */
 /*                          Safe restore / panic hook                         */
 /* -------------------------------------------------------------------------- */
-
-/// Restore the neutral ramp without stopping the engine (tray/reset action).
-pub fn restore_gamma() {
-    let duration = GAMMA_CONFIG.load(Ordering::SeqCst) as u32;
-    GAMMA_CONFIG.store(gamma_config(NEUTRAL_KELVIN, duration), Ordering::SeqCst);
-    let ok = {
-        let _io = GAMMA_IO.lock();
-        apply_gamma_locked(NEUTRAL_KELVIN)
-    };
-    if !ok { crate::diag::log("gamma neutral restore failed; the worker will retry if needed"); }
-    wake_lerp_worker();
-}
 
 /// Permanent exit path: stop future warm writes *before* restoring. The lock
 /// waits for any in-flight write, so a stale worker cannot re-tint the screen
@@ -450,17 +490,13 @@ pub fn install_panic_hook() {
     HOOK.get_or_init(|| {
         let previous = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
-            crate::diag::log(format!("PANIC: {info}"));
-            // Non-blocking: a panic may have happened on the colour worker.
-            crate::color_filter::panic_stop();
-            GAMMA_STOPPED.store(true, Ordering::SeqCst);
-            GAMMA_CONFIG.store(gamma_config(NEUTRAL_KELVIN, 2000), Ordering::SeqCst);
-            wake_lerp_worker();
-            // A panic could occur with GAMMA_IO already held on this thread.
-            // Never deadlock the panic hook; keep the watchdog armed either way.
-            if let Some(_io) = GAMMA_IO.try_lock() {
-                let _ = apply_gamma_locked(NEUTRAL_KELVIN);
-            }
+            // Hooks also run for caught panics and on individual background
+            // threads. They cannot tell whether the process will exit. Stopping
+            // the global filter here turned a recoverable error into a lasting
+            // outage. Never take Gamma/worker locks or touch the display here.
+            // A genuine process death is guarded by the separate watchdog; a
+            // normal exit calls stop_and_restore_gamma explicitly.
+            crate::diag::try_log_panic(format!("PANIC (thread may recover): {info}"));
             previous(info);
         }));
     });
@@ -482,8 +518,13 @@ pub fn spawn_watchdog() {
     const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let Ok(exe) = std::env::current_exe() else {
-        return;
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(err) => {
+            crate::diag::log(format!("gamma watchdog executable path unavailable: {err}"));
+            WATCHDOG_STARTED.store(false, Ordering::SeqCst);
+            return;
+        }
     };
     let child = std::process::Command::new(exe)
         .arg(WATCHDOG_FLAG)
@@ -524,7 +565,7 @@ pub fn is_watchdog_mode() -> bool {
 /// Runs the watchdog: block on the parent process handle, then reset the LUT.
 #[cfg(windows)]
 pub fn run_watchdog_mode() -> ! {
-    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::Foundation::{CloseHandle, GetLastError, WAIT_FAILED};
     use windows::Win32::System::Threading::{
         OpenProcess, WaitForSingleObject, INFINITE, PROCESS_SYNCHRONIZE,
     };
@@ -559,15 +600,21 @@ pub fn run_watchdog_mode() -> ! {
         std::process::exit(0);
     };
 
-    unsafe {
-        // Blocks until the main process exits *for any reason*
-        // (clean exit, crash, Task Manager kill).
-        let _ = WaitForSingleObject(handle, INFINITE);
+    let (wait, wait_error) = unsafe {
+        // WAIT_OBJECT_0 means the process handle was actually signaled. A
+        // failed or unexpected wait is not evidence that the parent exited.
+        let wait = WaitForSingleObject(handle, INFINITE);
+        let error = if wait == WAIT_FAILED { Some(GetLastError().0) } else { None };
         let _ = CloseHandle(handle);
+        (wait, error)
+    };
+    if !gamma_logic::watchdog_should_restore(wait.0) {
+        crate::diag::log(format!("watchdog: parent wait not signaled (result={}, error={wait_error:?}); exiting without touching gamma", wait.0));
+        std::process::exit(0);
     }
 
-    let _ = push_ramp(&build_ramp(NEUTRAL_KELVIN));
-    crate::diag::log("watchdog: parent terminated — gamma restored to 6500K");
+    let result = push_ramp(&build_ramp(NEUTRAL_KELVIN));
+    crate::diag::log(format!("watchdog: parent terminated; neutral 6500K API result any={} all={} (not visual proof)", result.any, result.all));
     std::process::exit(0);
 }
 

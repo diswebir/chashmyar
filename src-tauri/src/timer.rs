@@ -54,7 +54,7 @@ pub fn tick(app: &AppHandle, shared: &Shared) {
 
         let idle_enabled = rt.settings.timer.idle_detection_enabled;
         let pause_after = rt.settings.timer.idle_pause_seconds.max(30);
-        let reset_after = rt.settings.timer.idle_reset_seconds.max(pause_after + 30);
+        let reset_after = rt.settings.timer.idle_reset_seconds.max(pause_after.saturating_add(30));
 
         /* ----------------------- micro break countdown ---------------------- */
         if rt.timer.micro_break_active {

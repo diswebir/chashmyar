@@ -6,7 +6,7 @@ use tauri_plugin_autostart::ManagerExt;
 use crate::analytics::{self, AnalyticsSummary};
 use crate::engine::{self, BreakEnd, Shared};
 use crate::state::{Phase, Settings, Snapshot, WidgetMode};
-use crate::{display, engine as _engine, locker, persistence, windows};
+use crate::{engine as _engine, foreground, locker, persistence, windows};
 
 fn store_and_refresh(app: &AppHandle, shared: &State<'_, Shared>) -> Snapshot {
     persistence::request_save(app, shared.inner());
@@ -23,7 +23,9 @@ pub fn get_snapshot(app: AppHandle, shared: State<'_, Shared>) -> Snapshot {
 #[tauri::command(async)]
 pub fn update_settings(app: AppHandle, shared: State<'_, Shared>, mut settings: Settings) -> Snapshot {
     settings.eye.normalize_color_vision();
+    settings.eye.normalize_display();
     settings.system.migrate_widget_hover_delay();
+    let foreground_info = if settings.eye.color_safe_enabled { Some(foreground::current()) } else { None };
     let (mode_changed, theme_changed, language_changed);
     {
         let mut rt = shared.lock();
@@ -31,6 +33,8 @@ pub fn update_settings(app: AppHandle, shared: State<'_, Shared>, mut settings: 
         theme_changed = rt.settings.system.theme != settings.system.theme;
         language_changed = rt.settings.system.language != settings.system.language;
         rt.settings = settings;
+        if let Some(info) = foreground_info { foreground::cache_info(&mut rt, info); }
+        foreground::refresh_cached_match(&mut rt);
         if rt.timer.phase == Phase::Idle || (rt.timer.phase == Phase::Work && !rt.timer.running && !rt.timer.paused) {
             rt.timer.total_seconds = i64::from(rt.settings.timer.work_minutes.max(1)) * 60;
             rt.timer.remaining_seconds = rt.timer.total_seconds;
@@ -47,6 +51,9 @@ pub fn update_settings(app: AppHandle, shared: State<'_, Shared>, mut settings: 
 /// reverting unrelated settings changed in another window.
 #[tauri::command(async)]
 pub fn patch_settings(app: AppHandle, shared: State<'_, Shared>, patch: serde_json::Value) -> Result<Snapshot, String> {
+    let changes_foreground_policy = patch.get("eye").and_then(|v| v.as_object()).is_some_and(|eye|
+        eye.contains_key("colorSafeEnabled") || eye.contains_key("colorSafeWhitelist"));
+    let foreground_info = if changes_foreground_policy { Some(foreground::current()) } else { None };
     let (theme_changed, language_changed);
     {
         let mut rt = shared.lock();
@@ -67,6 +74,7 @@ pub fn patch_settings(app: AppHandle, shared: State<'_, Shared>, patch: serde_js
         }
         let mut next: Settings = serde_json::from_value(current).map_err(|e| e.to_string())?;
         next.eye.normalize_color_vision();
+        next.eye.normalize_display();
         next.timer.work_minutes = next.timer.work_minutes.clamp(1, 180);
         next.timer.break_minutes = next.timer.break_minutes.clamp(1, 90);
         next.timer.long_break_minutes = next.timer.long_break_minutes.clamp(1, 120);
@@ -85,6 +93,8 @@ pub fn patch_settings(app: AppHandle, shared: State<'_, Shared>, patch: serde_js
         theme_changed = next.system.theme != rt.settings.system.theme;
         language_changed = next.system.language != rt.settings.system.language;
         rt.settings = next;
+        if let Some(info) = foreground_info { foreground::cache_info(&mut rt, info); }
+        foreground::refresh_cached_match(&mut rt);
         if rt.timer.phase == Phase::Idle || (rt.timer.phase == Phase::Work && !rt.timer.running && !rt.timer.paused) {
             rt.timer.total_seconds = i64::from(rt.settings.timer.work_minutes) * 60;
             rt.timer.remaining_seconds = rt.timer.total_seconds;
@@ -160,9 +170,12 @@ pub fn retry_color_vision(app: AppHandle, shared: State<'_, Shared>) -> Snapshot
 
 #[tauri::command(async)]
 pub fn set_color_safe(app: AppHandle, shared: State<'_, Shared>, enabled: bool) -> Snapshot {
-    shared.lock().settings.eye.color_safe_enabled = enabled;
-    if !enabled {
-        shared.lock().whitelist_active = None;
+    let foreground_info = if enabled { Some(foreground::current()) } else { None };
+    {
+        let mut rt = shared.lock();
+        rt.settings.eye.color_safe_enabled = enabled;
+        if let Some(info) = foreground_info { foreground::cache_info(&mut rt, info); }
+        foreground::refresh_cached_match(&mut rt);
     }
     store_and_refresh(&app, &shared)
 }
@@ -171,6 +184,7 @@ pub fn set_color_safe(app: AppHandle, shared: State<'_, Shared>, enabled: bool) 
 pub fn whitelist_add(app: AppHandle, shared: State<'_, Shared>, entry: String) -> Snapshot {
     let cleaned = entry.trim().to_string();
     if !cleaned.is_empty() {
+        let info = foreground::current();
         let mut rt = shared.lock();
         let exists = rt
             .settings
@@ -178,32 +192,37 @@ pub fn whitelist_add(app: AppHandle, shared: State<'_, Shared>, entry: String) -
             .color_safe_whitelist
             .iter()
             .any(|e| e.eq_ignore_ascii_case(&cleaned));
-        if !exists {
-            rt.settings.eye.color_safe_whitelist.push(cleaned);
-        }
+        if !exists { rt.settings.eye.color_safe_whitelist.push(cleaned); }
+        foreground::cache_info(&mut rt, info);
+        foreground::refresh_cached_match(&mut rt);
     }
     store_and_refresh(&app, &shared)
 }
 
 #[tauri::command(async)]
 pub fn whitelist_remove(app: AppHandle, shared: State<'_, Shared>, entry: String) -> Snapshot {
+    let info = foreground::current();
     {
         let mut rt = shared.lock();
         rt.settings
             .eye
             .color_safe_whitelist
             .retain(|e| !e.eq_ignore_ascii_case(entry.trim()));
-        rt.whitelist_active = None;
+        foreground::cache_info(&mut rt, info);
+        foreground::refresh_cached_match(&mut rt);
     }
     store_and_refresh(&app, &shared)
 }
 
 #[tauri::command(async)]
 pub fn whitelist_reset_defaults(app: AppHandle, shared: State<'_, Shared>) -> Snapshot {
+    let info = foreground::current();
     {
         let mut rt = shared.lock();
         rt.settings.eye.color_safe_whitelist =
             crate::state::EyeSettings::default().color_safe_whitelist;
+        foreground::cache_info(&mut rt, info);
+        foreground::refresh_cached_match(&mut rt);
     }
     store_and_refresh(&app, &shared)
 }
@@ -592,12 +611,11 @@ pub fn reset_gamma(app: AppHandle) -> Snapshot {
         let mut rt = shared.lock();
         // Keep the chosen temperature for a later re-enable.
         rt.settings.eye.enabled = false;
-        rt.last_gamma_kelvin = None;
     }
-    display::restore_gamma();
     persistence::request_save(&app, &shared);
-    crate::tray::sync_eye_check(&app, false);
-    engine::refresh(&app, &shared)
+    let snapshot = engine::refresh_neutral_if_off(&app, &shared);
+    crate::tray::sync_eye_check(&app, snapshot.settings.eye.enabled);
+    snapshot
 }
 
 #[tauri::command(async)]

@@ -9,7 +9,7 @@
 #[path = "../../../src-tauri/src/display.rs"] mod display;
 #[path = "../../../src-tauri/src/overlay_policy.rs"] mod overlay_policy;
 #[path = "../../../src-tauri/src/screen_handoff.rs"] mod screen_handoff;
-mod diag { pub fn log<T: AsRef<str>>(_: T) {} }
+mod diag { pub fn log<T: AsRef<str>>(_: T) {} pub fn try_log_panic<T: AsRef<str>>(_: T) {} }
 
 use color_vision::{Profile, ScreenTarget, Status, Target, IDENTITY};
 use screen_handoff::{Handoff, NeutralState};
